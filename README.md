@@ -2,15 +2,20 @@
 
 A web app that replaces the Google Sheets workflow for vendor payments. The app imports the JS1 outstanding export, shows unpaid bills in FIFO order (oldest due date first), and makes the bank CSV file.
 
-## Status
+## What the app does
 
-This pull request has the base of the project and the two parts that must not be wrong:
+1. **Import.** Read the OUTSTANDINGS tab of the Vendor Outstanding sheet, or upload the JS1 export (`.xlsx` or `.csv`). The app does the same steps as your Apps Script: it removes blank rows and "Total for" rows, keeps columns A, C, D, E, F, I, J, K, L, M, formats dates, and orders the bills by due date (FIFO).
+2. **Payments.** One row for each open bill. Tick **Paid**. The amount starts as the bill balance (the same amount as the sheet uses). You can change it. Set the paid date.
+3. **Review.** Shows the bank lines, with **problems** (block), **checks** (warning) and **suggestions**:
+   - Problem: the party is not in Bene Master, the IFSC or account number is not valid, the same name has two different bank accounts, the amount is zero, the date is not valid, or the bill is already paid.
+   - Check: the amount is not the balance (part payment or more than the balance), or the paid date is not today. A check never blocks.
+   - Suggestion: an older bill of the same party is not selected (FIFO), other bills of the party are also due, or several bills go in one bank line (RTGS).
+4. **Done.** Makes the batch and downloads the CSV. The bills are locked. A database rule makes it impossible to pay a bill two times.
+5. **Batches.** Download any batch again (the exact saved bytes). Void a batch if the bank rejects it: the bills can be paid again.
+6. **Bene Master.** The saved copy of ALL DETAILS, with a refresh button and a list of rows with problems. Names, IFSC codes and account numbers are cleaned (spaces, line breaks, lower case).
+7. **Audit log.** Imports, refreshes, batches, voids and sign-ins.
 
-| Part | Where | Status |
-|---|---|---|
-| Locked bank CSV generator | `src/lib/bank-csv` | Done, with golden tests |
-| Apps Script port (filter, dates, FIFO order) | `src/lib/outstanding` | Done, with tests |
-| Database, import, payment screens, sign in, batches, audit log | - | Next pull requests |
+The app never writes to the Google Sheets. It uses the read-only scope.
 
 ## The bank CSV is locked
 
@@ -35,25 +40,36 @@ The fixture is built from the cell values of the BANK FORMAT sheet that the Goog
 
 ## Setup
 
+Node 20 or newer is needed.
+
 ```bash
 npm install
-npm run check   # type check, lint, tests
+cp .env.example .env.local     # fill in the values
+npm run db:migrate             # creates the tables
 npm run dev
+npm run check                  # type check, lint, tests
 ```
 
-Node 20 or newer is needed. CI runs the same checks on each pull request.
-
-## Environment variables
-
-Not used yet. The next pull requests will add:
+### Environment variables
 
 | Name | Use |
 |---|---|
-| `DATABASE_URL` | Postgres connection string |
-| `APP_PASSWORD_HASH` | Hash of the one sign-in password |
-| `SESSION_SECRET` | Key for the session cookie |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Service account key (read-only use of the sheets) |
-| `OUTSTANDING_SHEET_ID` | Vendor Outstanding spreadsheet |
-| `BENE_SHEET_ID` | Bene Master spreadsheet |
+| `DATABASE_URL` | Postgres connection string. On Vercel use a Neon database from the Marketplace (pooled URL). |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Key of the service account, as JSON on one line. Share both sheets with its email (viewer access is enough). |
+| `OUTSTANDING_SHEET_ID` | Vendor Outstanding spreadsheet ID. |
+| `BENE_SHEET_ID` | Bene Master spreadsheet ID. |
+| `OUTSTANDING_TAB`, `BENE_TAB` | Optional tab names. Defaults: `OUTSTANDINGS ` (with a space at the end) and `ALL DETAILS`. |
+| `APP_PASSWORD_HASH` | Optional. Sign in is **off** when this is empty. Make the value with `npm run hash-password -- '<password>'`. |
+| `SESSION_SECRET` | At least 32 random characters. Needed when sign in is on. |
 
-The app never writes to the Google Sheets.
+**Warning:** while sign in is off, anyone who has the link can see the bills and make bank files. A banner shows this on each page. Set `APP_PASSWORD_HASH` before you share the link.
+
+### Deploy to Vercel
+
+1. Make a Neon Postgres database and set the environment variables in the Vercel project.
+2. Run `npm run db:migrate` one time with the production `DATABASE_URL` (and again after each pull request that changes `drizzle/`).
+3. Deploy. Test with a preview deployment first.
+
+## Tests
+
+`npm test` runs 60+ tests. The database tests use a real Postgres engine in memory (PGlite) with the real migrations. They check the lock on paid bills, the transaction rollback, the void, the import rules and the audit log.

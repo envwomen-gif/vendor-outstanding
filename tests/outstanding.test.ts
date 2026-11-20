@@ -97,3 +97,18 @@ describe("buildFifo (PAYMENTS DUE FIFO QUERY port)", () => {
     expect(rejected[0]?.reason).toContain("Amount not valid");
   });
 });
+
+describe("export quirks", () => {
+  it("drops the header row quietly but reports other bad dates", () => {
+    const bad = ["Z", "PURC", "DOC-9", "01-Nov-2026", "", "tomorrow", "", "", "0", "1", "0", "5", ""];
+    const { bills, rejected } = buildFifo(buildSortedData([HEADER, bad, AJAY]));
+    expect(bills.map((b) => b.docNo)).toEqual(["003280/25-26"]);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toContain("Date not valid");
+  });
+  it("removes float noise from numbers in xlsx files", () => {
+    const row = ["X", "PURC", "D1", "24-Oct-2026", "", "23-Nov-2026", "", "", 26, 1000, 10, 69094.00000000001, ""];
+    const { bills } = buildFifo(buildSortedData([row]));
+    expect(bills[0]?.balancePaise).toBe(6909400);
+  });
+});
