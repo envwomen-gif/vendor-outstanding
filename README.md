@@ -40,7 +40,7 @@ The fixture is built from the cell values of the BANK FORMAT sheet that the Goog
 
 ## Setup
 
-Node 20 or newer is needed.
+Node 22 or newer is needed.
 
 ```bash
 npm install
@@ -67,8 +67,8 @@ npm run check                  # type check, lint, tests
 ### Deploy to Vercel
 
 1. Make a Neon Postgres database and set the environment variables in the Vercel project.
-2. Run `npm run db:migrate` one time with the production `DATABASE_URL` (and again after each pull request that changes `drizzle/`).
-3. Deploy. Test with a preview deployment first.
+2. Deploy. The production build runs the database migrations by itself (`vercel-build` script, only when `VERCEL_ENV` is `production`). If a migration fails, the build fails and the old version stays live.
+3. To run the migrations by hand: `npm run db:migrate` with `DATABASE_URL` set.
 
 ## Tests
 

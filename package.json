@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "next dev",
@@ -17,7 +17,8 @@
     "check": "npm run typecheck && npm run lint && npm run test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --experimental-strip-types --no-warnings src/db/migrate.ts",
-    "hash-password": "node --experimental-strip-types --no-warnings scripts/hash-password.ts"
+    "hash-password": "node --experimental-strip-types --no-warnings scripts/hash-password.ts",
+    "vercel-build": "node --experimental-strip-types --no-warnings src/db/migrate.ts --production-only && next build"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
