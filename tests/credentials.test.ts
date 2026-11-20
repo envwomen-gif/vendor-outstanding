@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CredentialsError, parseServiceAccountKey } from "@/lib/sheets/credentials";
+import { CredentialsError, describeCredentialShape, parseServiceAccountKey } from "@/lib/sheets/credentials";
 
 const PEM = "-----BEGIN PRIVATE KEY-----\nABC\nDEF\n-----END PRIVATE KEY-----\n";
 const base = { type: "service_account", client_email: "env-sheets@env-women.iam.gserviceaccount.com", private_key: PEM };
@@ -45,6 +45,30 @@ describe("parseServiceAccountKey", () => {
         expect(e).toBeInstanceOf(CredentialsError);
         expect((e as Error).message).not.toContain("SECRET123");
       }
+    }
+  });
+});
+
+describe("pasted text from rich text tools", () => {
+  it("reads text with curly quotes, a byte order mark and no-break spaces", () => {
+    const rich = "\ufeff" + JSON.stringify(base, null, 2).replace(/"/g, (m, i: number) => (i % 2 ? "\u201d" : "\u201c")).replace(/ /g, "\u00a0");
+    expect(parseServiceAccountKey(rich).client_email).toBe(base.client_email);
+  });
+
+  it("describes the shape without leaking the value", () => {
+    const shape = describeCredentialShape('{"private_key":"TOPSECRET');
+    expect(shape).toContain("has \"private_key\" yes");
+    expect(shape).toContain("ends with brace no");
+    expect(shape).not.toContain("TOPSECRET");
+  });
+
+  it("puts the shape in the error for an unreadable value", () => {
+    try {
+      parseServiceAccountKey("{ broken TOPSECRET");
+      throw new Error("should fail");
+    } catch (e) {
+      expect((e as Error).message).toContain("Shape of the stored value");
+      expect((e as Error).message).not.toContain("TOPSECRET");
     }
   });
 });
