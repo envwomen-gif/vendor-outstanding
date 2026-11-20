@@ -39,6 +39,36 @@ function escapeControlCharsInStrings(text: string): string {
   return out;
 }
 
+/**
+ * Fix characters that rich text editors and chat tools put in a paste:
+ * a byte order mark, no-break spaces, and curly quotes instead of straight quotes.
+ */
+function normalizePastedText(text: string): string {
+  return text
+    .replace(/^\ufeff/, "")
+    .replace(/[\u00a0\u2007\u202f]/g, " ")
+    .replace(/[\u201c\u201d\u201e\u201f]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+}
+
+/** Facts about the shape of the value. They never contain the value itself. */
+export function describeCredentialShape(raw: string): string {
+  const t = raw.trim();
+  const first = t.codePointAt(0);
+  const facts = [
+    `length ${raw.length}`,
+    `first character ${first === undefined ? "none" : `U+${first.toString(16).toUpperCase().padStart(4, "0")}`}`,
+    `last character ${t.length === 0 ? "none" : `U+${(t.codePointAt(t.length - 1) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`}`,
+    `lines ${raw.split("\n").length}`,
+    `curly quotes ${/[\u201c\u201d]/.test(raw) ? "yes" : "no"}`,
+    `has "client_email" ${raw.includes("client_email") ? "yes" : "no"}`,
+    `has "private_key" ${raw.includes("private_key") ? "yes" : "no"}`,
+    `has end marker ${raw.includes("END PRIVATE KEY") ? "yes" : "no"}`,
+    `ends with brace ${t.endsWith("}") ? "yes" : "no"}`,
+  ];
+  return facts.join(", ");
+}
+
 function stripWrappingQuotes(text: string): string {
   const t = text.trim();
   if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
@@ -58,7 +88,7 @@ function stripWrappingQuotes(text: string): string {
 export function parseServiceAccountKey(raw: string | undefined): ServiceAccountKey {
   if (!raw || raw.trim() === "") throw new CredentialsError("GOOGLE_SERVICE_ACCOUNT_JSON is not set.");
 
-  let text = stripWrappingQuotes(raw);
+  let text = stripWrappingQuotes(normalizePastedText(raw));
   if (!text.startsWith("{")) {
     try {
       const decoded = Buffer.from(text, "base64").toString("utf8").trim();
@@ -76,7 +106,8 @@ export function parseServiceAccountKey(raw: string | undefined): ServiceAccountK
       parsed = JSON.parse(escapeControlCharsInStrings(text));
     } catch {
       throw new CredentialsError(
-        "GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON. Paste the full text of the key file, from the first { to the last }.",
+        "GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON. Paste the full text of the key file, from the first { to the last }. " +
+          `Shape of the stored value: ${describeCredentialShape(raw)}.`,
       );
     }
   }
