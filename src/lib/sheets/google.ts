@@ -1,4 +1,5 @@
 import { GoogleAuth } from "google-auth-library";
+import { CredentialsError, parseServiceAccountKey } from "./credentials";
 
 const SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
 
@@ -15,15 +16,14 @@ let cachedAuth: GoogleAuth | undefined;
 
 function getAuth(): GoogleAuth {
   if (cachedAuth) return cachedAuth;
-  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!json) throw new SheetsError("GOOGLE_SERVICE_ACCOUNT_JSON is not set");
-  let credentials: unknown;
+  let credentials;
   try {
-    credentials = JSON.parse(json);
-  } catch {
-    throw new SheetsError("GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON");
+    credentials = parseServiceAccountKey(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  } catch (error) {
+    if (error instanceof CredentialsError) throw new SheetsError(error.message);
+    throw error;
   }
-  cachedAuth = new GoogleAuth({ credentials: credentials as Record<string, unknown>, scopes: [SCOPE] });
+  cachedAuth = new GoogleAuth({ credentials, scopes: [SCOPE] });
   return cachedAuth;
 }
 
