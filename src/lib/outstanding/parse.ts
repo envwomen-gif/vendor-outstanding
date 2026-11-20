@@ -35,6 +35,8 @@ const FORMAT_SOURCE_COLUMNS = new Set([2, 3, 5]);
 function asText(value: Cell): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) return value.toISOString();
+  // Remove float noise such as 69094.00000000001 (xlsx files store numbers as floats).
+  if (typeof value === "number") return String(Math.round(value * 100) / 100);
   return String(value);
 }
 
@@ -77,6 +79,9 @@ export function buildFifo(sorted: readonly SortedRow[]): { bills: FifoBill[]; re
   for (const row of sorted) {
     const [account, docNo, date, refNo, dueDate, , , adjusted, balance] = row;
     if (dueDate === "") continue; // WHERE Due IS NOT NULL
+    // The header row of the export has the text "Due Dt". The sheet QUERY drops it
+    // because the column holds dates. Only this exact header is dropped quietly.
+    if (account === "Account" && dueDate === "Due Dt") continue;
     const dueIso = parseDddMmmYyyyToIso(dueDate);
     const dateIso = parseDddMmmYyyyToIso(date);
     if (!dueIso || !dateIso) {

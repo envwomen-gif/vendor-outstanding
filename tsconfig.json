@@ -17,6 +17,7 @@
     "noEmit": true,
     "esModuleInterop": true,
     "isolatedModules": true,
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "incremental": true,
     "plugins": [
