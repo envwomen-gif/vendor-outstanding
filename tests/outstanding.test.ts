@@ -112,3 +112,32 @@ describe("export quirks", () => {
     expect(bills[0]?.balancePaise).toBe(6909400);
   });
 });
+
+describe("dates the sheet shows in other forms", () => {
+  it("reads a day without a leading zero", () => {
+    expect(parseDddMmmYyyyToIso("8-Nov-2026")).toBe("2026-11-08");
+  });
+
+  it("reads full and long month names", () => {
+    expect(parseDddMmmYyyyToIso("29-October-2026")).toBe("2026-10-29");
+    expect(parseDddMmmYyyyToIso("17-September-2026")).toBe("2026-09-17");
+    expect(parseDddMmmYyyyToIso("13-January-2027")).toBe("2027-01-13");
+  });
+
+  it("reads month-day only when the day part is above 12", () => {
+    expect(parseDddMmmYyyyToIso("10-29-2026")).toBe("2026-10-29");
+    expect(parseDddMmmYyyyToIso("08-11-2026")).toBe("2026-11-08");
+  });
+
+  it("still rejects dates that do not exist or are not dates", () => {
+    expect(parseDddMmmYyyyToIso("31-Feb-2026")).toBeUndefined();
+    expect(parseDddMmmYyyyToIso("8-Foo-2026")).toBeUndefined();
+    expect(parseDddMmmYyyyToIso("45-45-2026")).toBeUndefined();
+    expect(parseDddMmmYyyyToIso("")).toBeUndefined();
+  });
+
+  it("formats the same dates to dd-MMM-yyyy", () => {
+    expect(formatToDddMmmYyyy("8-November-2026")).toBe("08-Nov-2026");
+    expect(formatToDddMmmYyyy("10-29-2026")).toBe("29-Oct-2026");
+  });
+});
