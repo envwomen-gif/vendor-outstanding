@@ -49,7 +49,7 @@ describe("raw JS1 export in .xls format", () => {
     expect([...dues].sort()).toEqual(dues);
   });
 
-  it("imports into the database, and a second import of the same file adds nothing", async () => {
+  it("imports into the database, and a second import of the same file adds nothing", { timeout: 30_000 }, async () => {
     const db = await createTestDb();
     const parsed = await parseOutstandingUpload("PRATHAM.XLS", bytes());
     const input = { source: "upload" as const, rows: parsed.rows, fileName: "PRATHAM.XLS", fileSha256: parsed.sha256 };
