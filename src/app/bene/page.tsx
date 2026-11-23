@@ -1,3 +1,4 @@
+import { formatDisplayDateTime } from "@/lib/format";
 import { getDb } from "@/db";
 import { BeneRefresh } from "@/components/BeneRefresh";
 import { listBeneWithProblems } from "@/lib/queries";
@@ -13,7 +14,7 @@ export default async function BenePage() {
     <>
       <h1>Bene Master</h1>
       <p className="muted">
-        {total} parties in the saved copy. {refreshedAt ? `Last refresh: ${new Date(refreshedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}.` : "Not refreshed yet."}
+        {total} parties in the saved copy. {refreshedAt ? `Last refresh: ${formatDisplayDateTime(refreshedAt)}.` : "Not refreshed yet."}
       </p>
       <BeneRefresh />
       <h2>Rows with problems ({problems.length})</h2>

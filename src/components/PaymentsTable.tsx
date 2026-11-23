@@ -6,6 +6,7 @@ import { parseRupeesToPaise } from "@/lib/bank-csv";
 import type { Evaluation, Selection } from "@/lib/batch/evaluate";
 import { formatDisplayDate, formatInr } from "@/lib/format";
 import type { OpenBillRow } from "@/lib/queries";
+import { DateField } from "./DateField";
 
 interface RowState {
   paid: boolean;
@@ -258,7 +259,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
         </div>
         <label className="field">
           <span className="muted">Default paid date</span>
-          <input type="date" value={defaultDate} onChange={(e) => { setEvaluation(null); setDefaultDate(e.target.value); }} />
+          <DateField label="Default paid date" value={defaultDate} onChange={(iso) => { setEvaluation(null); setDefaultDate(iso); }} />
         </label>
       </div>
 
@@ -325,12 +326,11 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
                                 onChange={(e) => update(b, { amount: e.target.value })}
                                 aria-label={`Amount: ${b.account} ${b.docNo}`}
                               />
-                              <input
-                                type="date"
+                              <DateField
+                                label={`Paid date: ${b.account} ${b.docNo}`}
                                 value={dateOf(s)}
                                 className={s.paidDate !== undefined && s.paidDate !== defaultDate ? "custom-date" : undefined}
-                                onChange={(e) => update(b, { paidDate: e.target.value === "" ? undefined : e.target.value })}
-                                aria-label={`Paid date: ${b.account} ${b.docNo}`}
+                                onChange={(iso) => update(b, { paidDate: iso === "" ? undefined : iso })}
                               />
                             </>
                           ) : (
@@ -362,7 +362,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
         <div className="bar-actions">
           <label className="field">
             <span className="muted">Date for ticked bills</span>
-            <input type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} disabled={ticked.length === 0} />
+            <DateField label="Date for ticked bills" value={bulkDate} onChange={setBulkDate} disabled={ticked.length === 0} />
           </label>
           <button type="button" disabled={ticked.length === 0 || bulkDate === ""} onClick={applyBulkDate}>Set date</button>
           <button type="button" className="primary" disabled={pending || ticked.length === 0} onClick={review}>

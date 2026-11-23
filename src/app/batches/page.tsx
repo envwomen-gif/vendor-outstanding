@@ -1,5 +1,5 @@
 import { getDb } from "@/db";
-import { formatInr } from "@/lib/format";
+import { formatInr, formatDisplayDateTime } from "@/lib/format";
 import { listBatches } from "@/lib/queries";
 
 export default async function BatchesPage() {
@@ -12,7 +12,7 @@ export default async function BatchesPage() {
         <tbody>
           {batches.map((b) => (
             <tr key={b.id}>
-              <td>{b.createdAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</td>
+              <td>{formatDisplayDateTime(b.createdAt)}</td>
               <td><a href={`/batches/${b.id}`}>{b.fileName}</a></td>
               <td className="num">{b.lineCount}</td><td className="num">{b.billCount}</td><td className="num">{formatInr(b.totalPaise)}</td>
               <td>{b.status === "voided" ? <span className="tag bad">Void</span> : "Active"}</td>
