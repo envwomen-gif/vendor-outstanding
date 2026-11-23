@@ -191,7 +191,11 @@ describe("batch", () => {
     const newer = await idOf("PU001412/26-27"); // due 01-Dec-2026
     const evaluation = await previewBatch(db, [{ billId: newer, amountPaise: 5313400, paidDate: TODAY }], NOW);
     const codes = evaluation.issues.filter((i) => i.severity === "suggestion").map((i) => i.code);
-    expect(codes.filter((c) => c === "OLDER_BILL_NOT_SELECTED")).toHaveLength(2);
+    // One suggestion for the party, which names the two older bills.
+    expect(codes.filter((c) => c === "OLDER_BILL_NOT_SELECTED")).toHaveLength(1);
+    const text = evaluation.issues.find((i) => i.code === "OLDER_BILL_NOT_SELECTED")?.message ?? "";
+    expect(text).toContain("2 older bills");
+    expect(text).toContain("PU001214/26-27");
     expect(evaluation.canCreate).toBe(true);
   });
 
