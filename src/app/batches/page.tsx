@@ -15,7 +15,7 @@ export default async function BatchesPage() {
               <td>{formatDisplayDateTime(b.createdAt)}</td>
               <td><a href={`/batches/${b.id}`}>{b.fileName}</a></td>
               <td className="num">{b.lineCount}</td><td className="num">{b.billCount}</td><td className="num">{formatInr(b.totalPaise)}</td>
-              <td>{b.status === "voided" ? <span className="tag bad">Void</span> : "Active"}</td>
+              <td>{b.status === "voided" ? <span className="tag bad">Undone</span> : "Active"}</td>
               <td><a className="button" href={`/batches/${b.id}/csv`}>Download</a></td>
             </tr>
           ))}

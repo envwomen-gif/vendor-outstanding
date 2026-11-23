@@ -16,14 +16,11 @@ export function BatchActions({ batchId, voided, autoDownload }: { batchId: strin
     <div className="card">
       <div className="row">
         <a className="button primary" href={`/batches/${batchId}/csv`}>Download CSV again</a>
-      </div>
-      {!voided ? (
-        <div className="row">
-          <input placeholder="Reason, for example: bank rejected the file" value={reason} onChange={(e) => setReason(e.target.value)} style={{ minWidth: 320 }} />
+        {!voided ? (
           <button
-            disabled={pending || reason.trim().length < 3}
+            disabled={pending}
             onClick={() => {
-              if (!window.confirm("Void this batch? The bills can be paid again.")) return;
+              if (!window.confirm("Undo this batch? The bills open again and can be paid again. The batch stays in the history as void.")) return;
               start(async () => {
                 const r = await voidBatchAction(batchId, reason);
                 if (r.ok) window.location.reload();
@@ -31,10 +28,16 @@ export function BatchActions({ batchId, voided, autoDownload }: { batchId: strin
               });
             }}
           >
-            Void this batch
+            {pending ? "Undoing…" : "Undo this batch"}
           </button>
+        ) : null}
+      </div>
+      {!voided ? (
+        <div className="row">
+          <input aria-label="Reason (optional)" placeholder="Reason (optional), for example: test file" value={reason} onChange={(e) => setReason(e.target.value)} style={{ minWidth: 320 }} />
         </div>
       ) : null}
+      {voided ? <p className="muted">This batch is undone. Its bills are open again on the Payments screen.</p> : null}
       {message ? <p className="bad" role="alert">{message}</p> : null}
     </div>
   );

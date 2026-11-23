@@ -143,7 +143,7 @@ export async function voidBatchAction(batchId: string, reason: string): Promise<
     await voidBatch(getDb(), batchId, reason);
     return { ok: true, data: null };
   } catch (error) {
-    if (error instanceof Error && /reason|voided|not found/i.test(error.message)) return { ok: false, message: error.message };
+    if (error instanceof Error && /voided|not found/i.test(error.message)) return { ok: false, message: error.message };
     return fail(error);
   }
 }
