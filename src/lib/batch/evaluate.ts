@@ -235,30 +235,39 @@ export function evaluateSelection(args: {
   }
 
   // FIFO suggestions: other open bills of the same party that the person did not select.
+  // One suggestion for each party, so a party with many bills does not fill the screen.
   const selectedIds = new Set(rows.map((r) => r.bill.id));
-  const partiesInBatch = new Set(rows.map((r) => r.accountName));
+  const newestSelectedDue = new Map<string, string>();
+  for (const r of rows) {
+    const known = newestSelectedDue.get(r.bill.account) ?? "";
+    if (r.bill.dueDate > known) newestSelectedDue.set(r.bill.account, r.bill.dueDate);
+  }
+  const older = new Map<string, BillInfo[]>();
+  const alsoDue = new Map<string, BillInfo[]>();
   for (const other of openBills) {
     if (selectedIds.has(other.id)) continue;
-    const otherAccountName = lookup.accountNameOf(other.account);
-    if (otherAccountName === undefined || !partiesInBatch.has(otherAccountName)) continue;
-    const newestSelectedDue = rows
-      .filter((r) => r.accountName === otherAccountName)
-      .reduce((max, r) => (r.bill.dueDate > max ? r.bill.dueDate : max), "");
-    if (other.dueDate < newestSelectedDue) {
-      add({
-        severity: "suggestion",
-        code: "OLDER_BILL_NOT_SELECTED",
-        message: `${describe(other)} is older (due ${formatDisplayDate(other.dueDate)}, balance ${formatInr(other.balancePaise)}) and is not selected. FIFO says to pay the older bill first.`,
-        billId: other.id,
-      });
-    } else if (other.dueDate <= today) {
-      add({
-        severity: "suggestion",
-        code: "OTHER_DUE_BILLS_NOT_SELECTED",
-        message: `${describe(other)} is also due (${formatDisplayDate(other.dueDate)}, balance ${formatInr(other.balancePaise)}). You can pay it in the same bank line.`,
-        billId: other.id,
-      });
-    }
+    const newest = newestSelectedDue.get(other.account);
+    if (newest === undefined) continue;
+    const target = other.dueDate < newest ? older : other.dueDate <= today ? alsoDue : undefined;
+    if (target) target.set(other.account, [...(target.get(other.account) ?? []), other]);
+  }
+  const total = (list: readonly BillInfo[]) => list.reduce((sum, x) => sum + x.balancePaise, 0);
+  const examples = (list: readonly BillInfo[]) =>
+    `${list.slice(0, 3).map((x) => x.docNo).join(", ")}${list.length > 3 ? ` and ${list.length - 3} more` : ""}`;
+  for (const [account, list] of older) {
+    const oldest = list.reduce((min, x) => (x.dueDate < min ? x.dueDate : min), list[0]?.dueDate ?? "");
+    add({
+      severity: "suggestion",
+      code: "OLDER_BILL_NOT_SELECTED",
+      message: `${account}: ${list.length} older ${list.length === 1 ? "bill is" : "bills are"} not selected (${examples(list)}; oldest due ${formatDisplayDate(oldest)}; ${formatInr(total(list))} in all). FIFO says to pay the older bills first.`,
+    });
+  }
+  for (const [account, list] of alsoDue) {
+    add({
+      severity: "suggestion",
+      code: "OTHER_DUE_BILLS_NOT_SELECTED",
+      message: `${account}: ${list.length} other ${list.length === 1 ? "bill is" : "bills are"} also due (${examples(list)}; ${formatInr(total(list))} in all). You can pay them in the same bank line.`,
+    });
   }
 
   const blocked = issues.some((i) => i.severity === "block");
