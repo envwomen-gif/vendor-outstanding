@@ -16,14 +16,16 @@ export interface ImportSummary {
   readonly importId: string;
   readonly rowsRead: number;
   readonly billsNew: number;
+  /** Bills that were in the list and have other values in the file (or come back after they were removed). */
   readonly billsUpdated: number;
+  readonly billsUnchanged: number;
   readonly billsClosed: number;
   readonly billsPaidWaiting: number;
   readonly rejected: { reason: string; account: string; docNo: string }[];
 }
 
 /**
- * Import the outstanding rows. Rules:
+ * Import the outstanding rows. The file is the full list of open bills, so the import replaces the open bills:
  *  - a bill is known by (account, doc no)
  *  - a new bill becomes "open"
  *  - a known "open" bill gets the new dates and amounts
@@ -84,6 +86,7 @@ export async function importOutstandings(db: Db, input: ImportInput): Promise<Im
 
     let billsNew = 0;
     let billsUpdated = 0;
+    let billsUnchanged = 0;
     let billsPaidWaiting = 0;
 
     for (const [fifoPosition, b] of incoming.entries()) {
@@ -107,11 +110,19 @@ export async function importOutstandings(db: Db, input: ImportInput): Promise<Im
         await tx.update(bill).set({ lastImportId: run.id, fifoPosition }).where(eq(bill.id, known.id));
         billsPaidWaiting += 1;
       } else {
+        const same =
+          known.status === "open" &&
+          known.billDate === values.billDate &&
+          known.dueDate === values.dueDate &&
+          known.refNo === values.refNo &&
+          known.adjustedPaise === values.adjustedPaise &&
+          known.balancePaise === values.balancePaise;
         await tx
           .update(bill)
           .set({ ...values, status: "open" })
           .where(eq(bill.id, known.id));
-        billsUpdated += 1;
+        if (same) billsUnchanged += 1;
+        else billsUpdated += 1;
       }
     }
 
@@ -130,6 +141,7 @@ export async function importOutstandings(db: Db, input: ImportInput): Promise<Im
       rowsRead: input.rows.length,
       billsNew,
       billsUpdated,
+      billsUnchanged,
       billsClosed: missingOpenIds.length,
       billsPaidWaiting,
       rejected,

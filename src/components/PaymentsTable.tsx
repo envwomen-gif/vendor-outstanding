@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { createBatchAction, previewBatchAction } from "@/app/actions";
+import { createBatchAction, importFromUploadAction, previewBatchAction } from "@/app/actions";
 import { parseRupeesToPaise } from "@/lib/bank-csv";
 import type { Evaluation, Selection } from "@/lib/batch/evaluate";
 import { formatDisplayDate, formatInr } from "@/lib/format";
@@ -80,20 +81,31 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [dueBy, setDueBy] = useState(today);
+  const [dragging, setDragging] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [rejectedRows, setRejectedRows] = useState<string[]>([]);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [error, setError] = useState<{ message: string; details?: string[] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const router = useRouter();
   const [pending, start] = useTransition();
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   function rowState(b: OpenBillRow): RowState {
     return state[b.id] ?? { paid: false, amount: rupeesText(b.balancePaise), bankKey: b.bank.defaultKey, paidDate: undefined };
   }
-  function update(b: OpenBillRow, patch: Partial<RowState>) {
+  /** Any change in the bills makes an old check wrong, so the check is closed. */
+  function invalidate() {
     setEvaluation(null);
+    setSheetOpen(false);
+  }
+  function update(b: OpenBillRow, patch: Partial<RowState>) {
+    invalidate();
     setState((prev) => ({ ...prev, [b.id]: { ...rowState(b), ...patch } }));
   }
   const dateOf = (s: RowState) => s.paidDate ?? defaultDate;
@@ -133,7 +145,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
 
   // ----- actions -----
   function setParty(rows: OpenBillRow[], paid: boolean) {
-    setEvaluation(null);
+    invalidate();
     setState((prev) => {
       const next = { ...prev };
       for (const b of rows) next[b.id] = { ...(prev[b.id] ?? rowState(b)), paid };
@@ -143,7 +155,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
 
   function applyBulkDate() {
     if (bulkDate === "" || ticked.length === 0) return;
-    setEvaluation(null);
+    invalidate();
     setState((prev) => {
       const next = { ...prev };
       for (const b of ticked) next[b.id] = { ...(prev[b.id] ?? rowState(b)), paidDate: bulkDate };
@@ -169,23 +181,51 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
     return selections;
   }
 
-  function review() {
+  /** Quick selection. It ticks the bills that match, in the view that the person sees. */
+  function tickWhere(match: (b: OpenBillRow) => boolean, what: string) {
+    const matching = visible.filter(match);
+    const usable = matching.filter((b) => b.bank.status === "ok" || b.bank.status === "choose");
+    const needChoice = usable.filter((b) => b.bank.status === "choose" && rowState(b).bankKey === undefined).length;
+    invalidate();
+    setState((prev) => {
+      const next = { ...prev };
+      for (const b of usable) next[b.id] = { ...(prev[b.id] ?? rowState(b)), paid: true };
+      return next;
+    });
+    const skipped = matching.length - usable.length;
+    setError(null);
+    setNotice(
+      `${usable.length} ${usable.length === 1 ? "bill" : "bills"} ticked (${what}).` +
+        (skipped > 0 ? ` ${skipped} skipped: no usable bank details.` : "") +
+        (needChoice > 0 ? ` ${needChoice} need a bank account choice.` : ""),
+    );
+  }
+
+  function untickAll() {
+    invalidate();
+    setState({});
+    setNotice(null);
+  }
+
+  /** Step 1: check the ticked bills on the server. Nothing is saved. */
+  function makeFile() {
     setError(null);
     setNotice(null);
     const selections = collect();
     if (!selections) return;
     setEvaluation(null);
-    setPanelOpen(true);
+    setSheetOpen(true);
     start(async () => {
       const result = await previewBatchAction(selections);
       if (result.ok) setEvaluation(result.data);
       else {
-        setPanelOpen(false);
+        setSheetOpen(false);
         setError(result);
       }
     });
   }
 
+  /** Step 2: make the batch and download the file. */
   function done() {
     setError(null);
     const selections = collect();
@@ -196,30 +236,108 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
         // Open the batch page. It starts the download of the CSV file.
         window.location.href = `/batches/${result.data.batchId}?download=1`;
       } else {
-        setPanelOpen(false);
+        setSheetOpen(false);
+        setEvaluation(null);
         setError(result);
       }
     });
   }
 
-  // ----- keyboard -----
-  useEffect(() => {
-    function onKey(e: globalThis.KeyboardEvent) {
-      if (e.key === "Escape" && panelOpen) setPanelOpen(false);
-      const target = e.target as HTMLElement | null;
-      const typing = target !== null && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA");
-      if (e.key === "/" && !typing && !panelOpen) {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
+  // ----- import by drop or by button -----
+  async function importFile(file: File) {
+    setError(null);
+    setRejectedRows([]);
+    if (!/\.(xls|xlsx|csv)$/i.test(file.name)) {
+      setError({ message: `"${file.name}" is not a JS1 export. Use a .xls, .xlsx or .csv file.` });
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [panelOpen]);
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      const result = await importFromUploadAction(form);
+      if (result.ok) {
+        invalidate();
+        setNotice(
+          `Replaced the open bills with ${file.name}: ${result.data.billsNew} new, ${result.data.billsUpdated} changed, ${result.data.billsUnchanged} unchanged, ${result.data.billsClosed} removed (not in the file).` +
+            (result.data.billsPaidWaiting > 0 ? ` ${result.data.billsPaidWaiting} paid bills stay locked.` : ""),
+        );
+        setRejectedRows(result.data.rejected.slice(0, 20).map((r) => `${r.account} ${r.docNo}: ${r.reason}`));
+        router.refresh();
+      } else {
+        setError(result);
+      }
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // ----- keyboard and drop -----
+  // The window listeners are set once. They read the newest functions through this reference.
+  const latest = useRef({ makeFile, importFile, canMake: false });
+  useEffect(() => {
+    latest.current = { makeFile, importFile, canMake: ticked.length > 0 && !pending && !sheetOpen };
+  });
 
   useEffect(() => {
-    if (panelOpen) panelRef.current?.focus();
-  }, [panelOpen]);
+    function onKey(e: globalThis.KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const typing = tag === "INPUT" ? (target as HTMLInputElement).type !== "checkbox" : tag === "SELECT" || tag === "TEXTAREA";
+      if (e.key === "Escape" && sheetOpen) {
+        setEvaluation(null);
+        setSheetOpen(false);
+      } else if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "Enter" && !typing && tag !== "BUTTON" && tag !== "A" && latest.current.canMake) {
+        e.preventDefault();
+        latest.current.makeFile();
+      }
+    }
+    function hasFiles(e: DragEvent) {
+      return e.dataTransfer?.types.includes("Files") ?? false;
+    }
+    let depth = 0;
+    function onEnter(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      depth += 1;
+      setDragging(true);
+    }
+    function onLeave(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    }
+    function onOver(e: DragEvent) {
+      if (hasFiles(e)) e.preventDefault(); // without this the browser opens the file
+    }
+    function onDrop(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const file = e.dataTransfer?.files[0];
+      if (file) void latest.current.importFile(file);
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [sheetOpen]);
+
+  // When the check is ready, the button to confirm has the focus. Enter or Space then makes the file.
+  useEffect(() => {
+    if (evaluation?.canCreate && !pending) confirmRef.current?.focus();
+  }, [evaluation, pending]);
 
   function onListKey(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -235,9 +353,20 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
   }
 
   const blocked = evaluation !== null && !evaluation.canCreate;
+  const blocks = evaluation?.issues.filter((i) => i.severity === "block") ?? [];
+  const checks = evaluation?.issues.filter((i) => i.severity === "warning") ?? [];
+  const hints = evaluation?.issues.filter((i) => i.severity === "suggestion") ?? [];
+  const attentionCount = bills.filter(needsAttention).length;
+  const overdueCount = bills.filter((b) => b.overdueDays > 0).length;
 
   return (
     <>
+      {dragging ? (
+        <div className="dropzone" aria-hidden="true">
+          <div>Drop the JS1 file here to import it</div>
+        </div>
+      ) : null}
+
       <div className="toolbar">
         <input
           ref={searchRef}
@@ -252,15 +381,41 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
           {FILTERS.map((f) => (
             <button key={f.id} type="button" className="chip" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
               {f.label}
-              {f.id === "attention" ? <span className="count">{bills.filter(needsAttention).length}</span> : null}
-              {f.id === "overdue" ? <span className="count">{bills.filter((b) => b.overdueDays > 0).length}</span> : null}
+              {f.id === "attention" ? <span className="count">{attentionCount}</span> : null}
+              {f.id === "overdue" ? <span className="count">{overdueCount}</span> : null}
             </button>
           ))}
         </div>
         <label className="field">
           <span className="muted">Default paid date</span>
-          <DateField label="Default paid date" value={defaultDate} onChange={(iso) => { setEvaluation(null); setDefaultDate(iso); }} />
+          <DateField label="Default paid date" value={defaultDate} onChange={(iso) => { invalidate(); setDefaultDate(iso); }} />
         </label>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xls,.xlsx,.csv"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // the same file can be chosen again
+            if (file) void importFile(file);
+          }}
+        />
+        <button type="button" disabled={importing} onClick={() => fileRef.current?.click()}>
+          {importing ? "Importing…" : "Import JS1 file"}
+        </button>
+      </div>
+
+      <div className="quick" role="group" aria-label="Quick select">
+        <span className="muted">Tick:</span>
+        <button type="button" onClick={() => tickWhere((b) => b.dueDate <= today, "due today or earlier")}>Due by today</button>
+        <button type="button" onClick={() => tickWhere((b) => b.overdueDays > 0, "overdue")}>Overdue</button>
+        <span className="quick-date">
+          <DateField label="Tick bills due by" value={dueBy} onChange={setDueBy} />
+          <button type="button" onClick={() => tickWhere((b) => b.dueDate <= dueBy, `due by ${formatDisplayDate(dueBy)}`)}>Tick due by this date</button>
+        </span>
+        <button type="button" disabled={ticked.length === 0} onClick={untickAll}>Untick all</button>
+        <span className="muted hint">or drop a JS1 file anywhere on this page</span>
       </div>
 
       {error ? (
@@ -270,6 +425,12 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
         </div>
       ) : null}
       {notice ? <div className="issue suggestion" role="status">{notice}</div> : null}
+      {rejectedRows.length > 0 ? (
+        <div className="issue warning" role="status">
+          <strong>Rows that the app could not read:</strong>
+          {rejectedRows.map((r) => <div key={r}>{r}</div>)}
+        </div>
+      ) : null}
 
       <div ref={listRef} onKeyDown={onListKey} className="parties">
         {parties.map((p) => {
@@ -349,80 +510,85 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
           );
         })}
         {parties.length === 0 ? (
-          <p className="empty">{bills.length === 0 ? "No open bills. Import the outstanding bills first." : "No bill matches this search or filter."}</p>
+          <p className="empty">{bills.length === 0 ? "No open bills. Drop the JS1 file on this page to import it." : "No bill matches this search or filter."}</p>
         ) : null}
       </div>
 
       <div className="bar" role="region" aria-label="Selected bills">
-        <div className="bar-sum" aria-live="polite">
-          <strong>{ticked.length}</strong> {ticked.length === 1 ? "bill" : "bills"} ticked · <strong>{formatInr(tickedTotalPaise)}</strong>
-          {ticked.length > 0 ? <span className="muted"> · {dateCount} {dateCount === 1 ? "date" : "dates"}</span> : null}
-          {hiddenTicked > 0 ? <span className="muted"> · {hiddenTicked} hidden by the filter</span> : null}
-        </div>
-        <div className="bar-actions">
-          <label className="field">
-            <span className="muted">Date for ticked bills</span>
-            <DateField label="Date for ticked bills" value={bulkDate} onChange={setBulkDate} disabled={ticked.length === 0} />
-          </label>
-          <button type="button" disabled={ticked.length === 0 || bulkDate === ""} onClick={applyBulkDate}>Set date</button>
-          <button type="button" className="primary" disabled={pending || ticked.length === 0} onClick={review}>
-            Review and make CSV
-          </button>
+        {sheetOpen ? (
+          <div className="sheet" role="status" aria-live="polite">
+            {evaluation === null ? <p className="muted">Checking the bills…</p> : null}
+            {blocks.map((i, n) => (
+              <div key={`b${i.code}${i.billId ?? ""}${n}`} className="issue block"><strong>Problem: </strong>{i.message}</div>
+            ))}
+            {checks.map((i, n) => (
+              <div key={`w${i.code}${i.billId ?? ""}${n}`} className="issue warning"><strong>Check: </strong>{i.message}</div>
+            ))}
+            {evaluation && evaluation.lines.length > 0 ? (
+              <table>
+                <thead><tr><th>Paid date</th><th>Bank account</th><th>Bills</th><th className="num">Amount</th></tr></thead>
+                <tbody>
+                  {evaluation.lines.map((l) => (
+                    <tr key={`${l.paidDate}${l.accountName}${l.ifsc}${l.accountLast4}`}>
+                      <td>{formatDisplayDate(l.paidDate)}</td>
+                      <td>
+                        {l.accountName} <span className="muted small">{l.ifsc} ····{l.accountLast4}</span>
+                        {l.refNos.length ? <div className="muted small">BN {l.refNos.join(", ")}</div> : null}
+                      </td>
+                      <td>{l.billCount}</td>
+                      <td className="num">{formatInr(l.amountPaise)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+            {hints.length > 0 ? (
+              <details className="hints">
+                <summary>{hints.length} {hints.length === 1 ? "suggestion" : "suggestions"}</summary>
+                {hints.map((i, n) => (
+                  <div key={`s${i.code}${i.billId ?? ""}${n}`} className="issue suggestion">{i.message}</div>
+                ))}
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="bar-row">
+          <div className="bar-sum" aria-live="polite">
+            <strong>{ticked.length}</strong> {ticked.length === 1 ? "bill" : "bills"} ticked · <strong>{formatInr(tickedTotalPaise)}</strong>
+            {ticked.length > 0 ? <span className="muted"> · {dateCount} {dateCount === 1 ? "date" : "dates"}</span> : null}
+            {hiddenTicked > 0 ? <span className="muted"> · {hiddenTicked} hidden by the filter</span> : null}
+          </div>
+          <div className="bar-actions">
+            {sheetOpen ? (
+              <>
+                <span className={blocked ? "bad" : "ok"}>
+                  {evaluation === null
+                    ? "Checking…"
+                    : blocked
+                      ? `${blocks.length} ${blocks.length === 1 ? "problem" : "problems"} to fix`
+                      : `${evaluation.lines.length} bank ${evaluation.lines.length === 1 ? "line" : "lines"} · ${formatInr(evaluation.totalPaise)}`}
+                </span>
+                <button type="button" onClick={() => { setEvaluation(null); setSheetOpen(false); }}>Back</button>
+                <button ref={confirmRef} type="button" className="primary" disabled={pending || evaluation === null || blocked} onClick={done}>
+                  {pending && evaluation !== null ? "Making the file…" : "Confirm and download"}
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="field">
+                  <span className="muted">Date for ticked bills</span>
+                  <DateField label="Date for ticked bills" value={bulkDate} onChange={setBulkDate} disabled={ticked.length === 0} />
+                </label>
+                <button type="button" disabled={ticked.length === 0 || bulkDate === ""} onClick={applyBulkDate}>Set date</button>
+                <button type="button" className="primary" disabled={pending || ticked.length === 0} onClick={makeFile}>
+                  Make bank CSV
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
-
-      {panelOpen ? (
-        <>
-          <div className="backdrop" onClick={() => setPanelOpen(false)} aria-hidden="true" />
-          <div className="panel" role="dialog" aria-modal="true" aria-labelledby="review-title" ref={panelRef} tabIndex={-1}>
-            <div className="panel-head">
-              <h2 id="review-title">Review the bank file</h2>
-              <button type="button" onClick={() => setPanelOpen(false)}>Close</button>
-            </div>
-            <div className="panel-body">
-              {evaluation === null ? <p className="muted" role="status">Checking…</p> : null}
-              {evaluation && evaluation.lines.length > 0 ? (
-                <table>
-                  <thead><tr><th>Paid date</th><th>Bank account</th><th>Bills</th><th className="num">Amount</th></tr></thead>
-                  <tbody>
-                    {evaluation.lines.map((l) => (
-                      <tr key={`${l.paidDate}${l.accountName}${l.ifsc}${l.accountLast4}`}>
-                        <td>{formatDisplayDate(l.paidDate)}</td>
-                        <td>
-                          {l.accountName}
-                          <div className="muted small">{l.ifsc} ····{l.accountLast4}</div>
-                          {l.refNos.length ? <div className="muted small">BN {l.refNos.join(", ")}</div> : null}
-                        </td>
-                        <td>{l.billCount}</td>
-                        <td className="num">{formatInr(l.amountPaise)}</td>
-                      </tr>
-                    ))}
-                    <tr>
-                      <td colSpan={3}><strong>Total ({evaluation.lines.length} bank {evaluation.lines.length === 1 ? "line" : "lines"})</strong></td>
-                      <td className="num"><strong>{formatInr(evaluation.totalPaise)}</strong></td>
-                    </tr>
-                  </tbody>
-                </table>
-              ) : null}
-              {evaluation?.issues.map((i, n) => (
-                <div key={`${i.code}${i.billId ?? ""}${n}`} className={`issue ${i.severity}`}>
-                  <strong>{i.severity === "block" ? "Problem: " : i.severity === "warning" ? "Check: " : "Suggestion: "}</strong>
-                  {i.message}
-                </div>
-              ))}
-              {evaluation ? (
-                evaluation.canCreate ? <p className="ok">No problem blocks this file. Press the button to make it.</p> : <p className="bad">Fix the problems first. Close this panel and change the bills.</p>
-              ) : null}
-            </div>
-            <div className="panel-foot">
-              <button type="button" onClick={() => setPanelOpen(false)}>Back to the bills</button>
-              <button type="button" className="primary" disabled={pending || evaluation === null || blocked} onClick={done}>
-                {pending && evaluation !== null ? "Making the file…" : "Make the bank CSV"}
-              </button>
-            </div>
-          </div>
-        </>
-      ) : null}
     </>
   );
 }

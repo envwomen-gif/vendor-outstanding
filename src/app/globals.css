@@ -53,14 +53,15 @@ tr.selected { background:var(--hintbg); }
 .needs-choice { border-color:var(--warn); }
 .bank-ok { font-size:13px; }
 .empty { padding:32px; text-align:center; color:var(--muted); }
-.bar { position:fixed; left:0; right:0; bottom:0; z-index:10; display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap; padding:10px 24px; background:var(--card); border-top:1px solid var(--line); box-shadow:0 -4px 16px rgba(0,0,0,.08); }
+.bar { position:fixed; left:0; right:0; bottom:0; z-index:10; background:var(--card); border-top:1px solid var(--line); box-shadow:0 -4px 16px rgba(0,0,0,.08); }
+.bar-row { display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap; padding:10px 24px; }
 .bar-actions { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
-.backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:20; }
-.panel { position:fixed; top:0; right:0; bottom:0; width:min(560px,100vw); z-index:21; background:var(--card); border-left:1px solid var(--line); display:flex; flex-direction:column; outline:none; }
-.panel-head, .panel-foot { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 16px; }
-.panel-head { border-bottom:1px solid var(--line); } .panel-head h2 { margin:0; }
-.panel-foot { border-top:1px solid var(--line); }
-.panel-body { padding:16px; overflow:auto; flex:1; }
+.sheet { max-height:45vh; overflow:auto; padding:12px 24px; border-bottom:1px solid var(--line); }
+.hints summary { cursor:pointer; color:var(--hint); font-size:14px; margin:6px 0; }
+.quick { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 12px; }
+.quick-date { display:inline-flex; gap:6px; align-items:center; }
+.quick .hint { margin-left:auto; font-size:13px; }
+.dropzone { position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; background:rgba(29,78,216,.18); border:3px dashed var(--accent); font-size:22px; font-weight:600; color:var(--fg); pointer-events:none; }
 @media (max-width: 1100px) {
   .bill { grid-template-columns:28px 1fr 1fr; grid-template-areas:"check doc due" "check bal pay" "check bank bank"; align-items:start; }
   .bill > input[type="checkbox"] { grid-area:check; margin-top:4px; }
@@ -68,7 +69,7 @@ tr.selected { background:var(--hintbg); }
   .bill .pay { grid-area:pay; flex-wrap:wrap; } .bill .bank { grid-area:bank; }
 }
 @media (max-width: 600px) {
-  main { padding:12px; } nav { padding:10px 12px; } .bar { padding:8px 12px; }
+  main { padding:12px; } nav { padding:10px 12px; } .bar-row, .sheet { padding:8px 12px; } .quick .hint { margin-left:0; }
 }
 @media (prefers-reduced-motion: no-preference) { button, .chip { transition: background-color .12s, border-color .12s; } }
 

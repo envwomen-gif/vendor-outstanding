@@ -38,8 +38,17 @@ describe("import", () => {
   it("is repeatable: a second import of the same file changes nothing important", async () => {
     const summary = await importOutstandings(db, { source: "upload", rows: OUTSTANDING_ROWS });
     expect(summary.billsNew).toBe(0);
-    expect(summary.billsUpdated).toBe(8);
+    expect(summary.billsUpdated).toBe(0);
+    expect(summary.billsUnchanged).toBe(8);
     expect(summary.billsClosed).toBe(0);
+  });
+
+  it("counts a bill as changed only when its values changed", async () => {
+    const changed = OUTSTANDING_ROWS.map((r) => (r[2] === "PU001214/26-27" ? [...r.slice(0, 11), "99999", ...r.slice(12)] : r));
+    const summary = await importOutstandings(db, { source: "upload", rows: changed });
+    expect(summary).toMatchObject({ billsNew: 0, billsUpdated: 1, billsUnchanged: 7, billsClosed: 0 });
+    const [row] = await db.select().from(bill).where(eq(bill.docNo, "PU001214/26-27"));
+    expect(row?.balancePaise).toBe(9999900);
   });
 
   it("closes an open bill that is gone, and opens it again when it returns", async () => {

@@ -41,8 +41,9 @@ export function ImportPanel() {
           <strong className="ok">Import done.</strong>
           <ul>
             <li>New bills: {result.data.billsNew}</li>
-            <li>Updated bills: {result.data.billsUpdated}</li>
-            <li>Closed bills (not in the file any more): {result.data.billsClosed}</li>
+            <li>Changed bills: {result.data.billsUpdated}</li>
+            <li>Unchanged bills: {result.data.billsUnchanged}</li>
+            <li>Removed bills (not in the file any more): {result.data.billsClosed}</li>
             <li>Paid bills that JS1 still lists (kept locked): {result.data.billsPaidWaiting}</li>
             <li>Rows that the app could not read: {result.data.rejected.length}</li>
           </ul>
