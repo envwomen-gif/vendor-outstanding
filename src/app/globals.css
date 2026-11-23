@@ -62,11 +62,12 @@ tr.selected { background:var(--hintbg); }
 .panel-foot { border-top:1px solid var(--line); }
 .panel-body { padding:16px; overflow:auto; flex:1; }
 @media (max-width: 1100px) {
-  .bill { grid-template-columns:28px 1fr 1fr; }
-  .bill .pay, .bill .bank { grid-column:2 / -1; }
-  .bill .num { text-align:left; }
+  .bill { grid-template-columns:28px 1fr 1fr; grid-template-areas:"check doc due" "check bal pay" "check bank bank"; align-items:start; }
+  .bill > input[type="checkbox"] { grid-area:check; margin-top:4px; }
+  .bill .doc { grid-area:doc; } .bill .due { grid-area:due; } .bill .balance { grid-area:bal; text-align:left; }
+  .bill .pay { grid-area:pay; flex-wrap:wrap; } .bill .bank { grid-area:bank; }
 }
 @media (max-width: 600px) {
-  main { padding:12px; } nav { padding:10px 12px; } .bar { padding:8px 12px; } .bill .pay { flex-wrap:wrap; }
+  main { padding:12px; } nav { padding:10px 12px; } .bar { padding:8px 12px; }
 }
 @media (prefers-reduced-motion: no-preference) { button, .chip { transition: background-color .12s, border-color .12s; } }
