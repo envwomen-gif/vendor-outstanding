@@ -16,6 +16,7 @@ const FULL_MONTHS = [
 ] as const;
 
 const NUMERIC = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
+const SLASH = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
 const NAMED = /^(\d{1,2})-([A-Za-z]{3,9})-(\d{4})$/;
 
 interface DateParts {
@@ -44,6 +45,9 @@ function parseDateParts(text: string): DateParts | undefined {
     if (second > 12 && first <= 12) return { day: second, monthIndex: first - 1, year };
     return { day: first, monthIndex: second - 1, year };
   }
+  // "09/30/2026": the JS1 export shows dates as month/day/year.
+  const slash = SLASH.exec(text);
+  if (slash) return { day: Number(slash[2]), monthIndex: Number(slash[1]) - 1, year: Number(slash[3]) };
   const named = NAMED.exec(text);
   if (named) {
     return { day: Number(named[1]), monthIndex: monthIndexFromName(named[2] ?? ""), year: Number(named[3]) };

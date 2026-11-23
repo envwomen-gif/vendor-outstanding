@@ -21,6 +21,7 @@
     "vercel-build": "node --experimental-strip-types --no-warnings src/db/migrate.ts --production-only && next build"
   },
   "dependencies": {
+    "cfb": "^1.2.2",
     "drizzle-orm": "^0.45.4",
     "google-auth-library": "^11.3.4",
     "next": "^16.4.6",
