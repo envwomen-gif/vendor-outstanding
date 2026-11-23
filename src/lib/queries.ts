@@ -96,9 +96,39 @@ export async function getBatch(db: Db, id: string) {
   const payments = await db
     .select({ p: payment, account: bill.account, docNo: bill.docNo })
     .from(payment)
-    .innerJoin(bill, eq(bill.id, payment.billId))
+    .leftJoin(bill, eq(bill.id, payment.billId))
     .where(eq(payment.batchId, id));
   return { batch: row, payments };
+}
+
+/** One party of Bene Master with its bank accounts, for the Instant screen. The account number is cut to 4 digits. */
+export interface InstantParty {
+  name: string;
+  options: BankOptionView[];
+  /** The account that was used last time, when the party has more than one. */
+  defaultKey: string | undefined;
+}
+
+export async function listInstantParties(db: Db): Promise<InstantParty[]> {
+  const [lookup, choices] = await Promise.all([loadBeneLookup(db), db.select().from(bankChoice)]);
+  const lastChoice = new Map(choices.map((c) => [c.softwareName, c.optionKey]));
+  return lookup
+    .softwareNames()
+    .map((name) => {
+      const options = lookup.optionsOf(name).map((o) => ({
+        key: o.key,
+        accountName: o.accountName,
+        ifsc: o.ifsc,
+        last4: o.accountNumber.slice(-4),
+        problems: o.problems,
+      }));
+      const remembered = lastChoice.get(name);
+      const usable = options.filter((o) => o.problems.length === 0);
+      const defaultKey =
+        options.length === 1 ? options[0]?.key : usable.some((o) => o.key === remembered) ? remembered : undefined;
+      return { name, options, defaultKey };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function listAudit(db: Db, limit = 300) {

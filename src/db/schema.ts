@@ -79,6 +79,8 @@ export const batch = pgTable("batch", {
   billCount: integer("bill_count").notNull(),
   totalPaise: paise("total_paise").notNull(),
   status: text("status", { enum: ["active", "voided"] }).notNull().default("active"),
+  /** bills: made from open bills on the Payments screen. instant: typed on the Instant screen, with no bill. */
+  kind: text("kind", { enum: ["bills", "instant"] }).notNull().default("bills"),
   voidReason: text("void_reason"),
   voidedAt: timestamp("voided_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -88,7 +90,10 @@ export const payment = pgTable(
   "payment",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    billId: uuid("bill_id").notNull().references(() => bill.id),
+    /** Empty for an instant payment, which has no bill. */
+    billId: uuid("bill_id").references(() => bill.id),
+    /** Party name (Bene Master column A). Set for instant payments. */
+    softwareName: text("software_name"),
     batchId: uuid("batch_id").notNull().references(() => batch.id),
     amountPaise: paise("amount_paise").notNull(),
     paidDate: date("paid_date", { mode: "string" }).notNull(),

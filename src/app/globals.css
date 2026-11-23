@@ -90,3 +90,15 @@ tr.selected { background:var(--hintbg); }
 .overdue-scroll { overflow:auto; max-height:calc(100vh - 160px); }
 .overdue-party { background:color-mix(in srgb, var(--line) 35%, var(--card)); }
 .overdue-total td { border-bottom:2px solid var(--line); }
+
+/* Instant payments */
+.instant-rows { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+.instant-row { display:grid; grid-template-columns:24px minmax(220px,1.4fr) minmax(220px,1.4fr) 130px minmax(160px,1fr) auto; gap:12px; align-items:end; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); }
+.instant-row.has-problem { border-color:var(--bad); }
+.instant-row .n { align-self:center; }
+.instant-row .problem { grid-column:2 / -1; }
+.instant-row input:not(.amount), .instant-row select { width:100%; }
+@media (max-width: 900px) {
+  .instant-row { grid-template-columns:1fr; }
+  .instant-row .problem { grid-column:1; }
+}

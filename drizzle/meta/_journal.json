@@ -15,6 +15,13 @@
       "when": 1795415418052,
       "tag": "0001_bank_choice",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795426877701,
+      "tag": "0002_instant_payments",
+      "breakpoints": true
     }
   ]
 }

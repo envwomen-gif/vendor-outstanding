@@ -14,7 +14,7 @@ export default async function BatchesPage() {
           {batches.map((b) => (
             <tr key={b.id}>
               <td>{formatDisplayDateTime(b.createdAt)}</td>
-              <td><a href={`/batches/${b.id}`}>{b.fileName}</a></td>
+              <td><a href={`/batches/${b.id}`}>{b.fileName}</a>{b.kind === "instant" ? <> <span className="tag">Instant</span></> : null}</td>
               <td className="num">{b.lineCount}</td><td className="num">{b.billCount}</td><td className="num">{formatInr(b.totalPaise)}</td>
               <td>{b.status === "voided" ? <span className="tag bad">Undone</span> : "Active"}</td>
               <td className="row"><a className="button" href={`/batches/${b.id}/csv`}>Download</a>{b.status !== "voided" ? <UndoBatchButton batchId={b.id} /> : null}</td>

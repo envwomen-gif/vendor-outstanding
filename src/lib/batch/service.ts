@@ -158,7 +158,8 @@ export async function voidBatch(db: Db, batchId: string, reason = ""): Promise<v
     if (target.status === "voided") throw new Error("This batch is already voided.");
 
     const payments = await tx.select().from(payment).where(eq(payment.batchId, batchId));
-    const billIds = payments.map((p) => p.billId);
+    // An instant payment has no bill. Only real bills open again.
+    const billIds = payments.flatMap((p) => (p.billId === null ? [] : [p.billId]));
 
     const [latest] = await tx.select({ id: importRun.id }).from(importRun).orderBy(desc(importRun.createdAt)).limit(1);
     const bills = billIds.length > 0 ? await tx.select().from(bill).where(inArray(bill.id, billIds)) : [];
@@ -172,6 +173,6 @@ export async function voidBatch(db: Db, batchId: string, reason = ""): Promise<v
         .set({ status: stillListed ? "open" : "closed", updatedAt: new Date() })
         .where(eq(bill.id, b.id));
     }
-    await writeAudit(tx, "batch.void", "batch", batchId, { reason: trimmed, bills: billIds.length });
+    await writeAudit(tx, "batch.void", "batch", batchId, { reason: trimmed, kind: target.kind, bills: billIds.length, payments: payments.length });
   });
 }
