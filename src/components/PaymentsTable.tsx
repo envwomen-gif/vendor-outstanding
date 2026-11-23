@@ -10,6 +10,7 @@ import type { OpenBillRow } from "@/lib/queries";
 interface RowState {
   paid: boolean;
   amount: string; // rupees as typed
+  bankKey: string | undefined; // the chosen bank account, when the party has more than one
 }
 
 function rupeesText(paise: number): string {
@@ -31,7 +32,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
   const selectedCount = Object.values(state).filter((s) => s.paid).length;
 
   function rowState(b: OpenBillRow): RowState {
-    return state[b.id] ?? { paid: false, amount: rupeesText(b.balancePaise) };
+    return state[b.id] ?? { paid: false, amount: rupeesText(b.balancePaise), bankKey: b.bank.defaultKey };
   }
   function update(b: OpenBillRow, patch: Partial<RowState>) {
     setEvaluation(null);
@@ -50,7 +51,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
         setError({ message: `${b.account}, bill ${b.docNo}: the amount "${s.amount}" is not valid. Use numbers, with 2 decimals at most.` });
         return null;
       }
-      selections.push({ billId: b.id, amountPaise, paidDate });
+      selections.push({ billId: b.id, amountPaise, paidDate, ...(s.bankKey ? { bankKey: s.bankKey } : {}) });
     }
     return selections;
   }
@@ -107,11 +108,11 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
           <h2 style={{ marginTop: 0 }}>Review</h2>
           {evaluation.lines.length > 0 ? (
             <table>
-              <thead><tr><th>Paid date</th><th>Party (bank account name)</th><th>Bills</th><th>Reference</th><th className="num">Bank line amount</th></tr></thead>
+              <thead><tr><th>Paid date</th><th>Party (bank account)</th><th>Bills</th><th>Reference</th><th className="num">Bank line amount</th></tr></thead>
               <tbody>
                 {evaluation.lines.map((l) => (
-                  <tr key={`${l.paidDate}${l.accountName}`}>
-                    <td>{formatDisplayDate(l.paidDate)}</td><td>{l.accountName}</td><td>{l.billCount}</td>
+                  <tr key={`${l.paidDate}${l.accountName}${l.ifsc}${l.accountLast4}`}>
+                    <td>{formatDisplayDate(l.paidDate)}</td><td>{l.accountName} <span className="muted">{l.ifsc} ····{l.accountLast4}</span></td><td>{l.billCount}</td>
                     <td>{l.refNos.length ? `BN ${l.refNos.join(", ")}` : ""}</td><td className="num">{formatInr(l.amountPaise)}</td>
                   </tr>
                 ))}
@@ -133,7 +134,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
         <thead>
           <tr>
             <th>Paid</th><th>Amount paid (₹)</th><th>Due date</th><th>Party</th><th>Doc no</th><th>Ref no</th>
-            <th className="num">Adjusted</th><th className="num">Balance</th><th className="num">Overdue days</th><th>Bank details</th>
+            <th className="num">Adjusted</th><th className="num">Balance</th><th className="num">Overdue days</th><th>Bank account</th>
           </tr>
         </thead>
         <tbody>
@@ -151,9 +152,26 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
                 <td className="num">{formatInr(b.balancePaise)}</td>
                 <td className="num">{b.overdueDays}</td>
                 <td>
-                  {b.bank.status === "ok" ? <span className="ok">OK</span> : null}
                   {b.bank.status === "unmapped" ? <span className="tag bad">Not in Bene Master</span> : null}
                   {b.bank.status === "invalid" ? <span className="tag bad">Check bank details</span> : null}
+                  {b.bank.status === "ok" ? (
+                    <span className="ok">{b.bank.options[0]?.ifsc} ····{b.bank.options[0]?.last4}</span>
+                  ) : null}
+                  {b.bank.status === "choose" ? (
+                    <select
+                      value={s.bankKey ?? ""}
+                      onChange={(e) => update(b, { bankKey: e.target.value === "" ? undefined : e.target.value })}
+                      aria-label={`Bank account: ${b.account} ${b.docNo}`}
+                    >
+                      <option value="">Choose account ({b.bank.options.length})</option>
+                      {b.bank.options.map((o) => (
+                        <option key={o.key} value={o.key} disabled={o.problems.length > 0}>
+                          {o.accountName} · {o.ifsc} ····{o.last4}
+                          {o.problems.length > 0 ? " (check details)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                 </td>
               </tr>
             );

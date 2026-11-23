@@ -13,6 +13,12 @@ export interface PaidBill {
   readonly refNo: string;
   /** Amount paid for this bill, in paise. */
   readonly amountPaise: number;
+  /**
+   * Bank account that the person chose. When both are set, the line uses them and
+   * the lookup is not used. Bills of one party with different accounts go on different lines.
+   */
+  readonly ifsc?: string;
+  readonly accountNumber?: string;
 }
 
 /** Returns the bank details of a name, or undefined. The first Bene Master row wins. */
@@ -72,12 +78,13 @@ function toLine(fields: ReadonlyMap<number, string>): string {
 interface Group {
   readonly paidDate: string;
   readonly beneficiaryName: string;
+  readonly bank: Beneficiary | undefined;
   readonly refNos: string[];
   amountPaise: number;
   billCount: number;
 }
 
-/** Group by (paid date, bank account name). The order of first appearance stays. */
+/** Group by (paid date, bank account name, chosen account). The order of first appearance stays. */
 function groupBills(bills: readonly PaidBill[]): Group[] {
   const groups = new Map<string, Group>();
   for (const bill of bills) {
@@ -89,12 +96,17 @@ function groupBills(bills: readonly PaidBill[]): Group[] {
       );
     }
     formatPaidDate(bill.paidDate); // validates
-    const key = `${bill.paidDate}\u0000${bill.beneficiaryName}`;
+    const bank =
+      bill.ifsc !== undefined && bill.accountNumber !== undefined
+        ? { ifsc: bill.ifsc, accountNumber: bill.accountNumber }
+        : undefined;
+    const key = [bill.paidDate, bill.beneficiaryName, bank?.ifsc ?? "", bank?.accountNumber ?? ""].join("\u0000");
     let group = groups.get(key);
     if (!group) {
       group = {
         paidDate: bill.paidDate,
         beneficiaryName: bill.beneficiaryName,
+        bank,
         refNos: [],
         amountPaise: 0,
         billCount: 0,
@@ -129,7 +141,7 @@ export function buildBankCsv(
 
   for (const group of groupBills(bills)) {
     const name = group.beneficiaryName;
-    const bene = name === "" ? undefined : lookup(name);
+    const bene = group.bank ?? (name === "" ? undefined : lookup(name));
     if (!bene) {
       throw new BankCsvError(
         "MISSING_BENEFICIARY",

@@ -10,7 +10,7 @@ export type IssueCode =
   | "BENE_UNMAPPED"
   | "BENE_INVALID_IFSC"
   | "BENE_INVALID_ACCOUNT"
-  | "BENE_CONFLICT"
+  | "BANK_ACCOUNT_NOT_CHOSEN"
   | "AMOUNT_NOT_POSITIVE"
   | "AMOUNT_NOT_PAISE"
   | "DATE_INVALID"
@@ -44,11 +44,16 @@ export interface Selection {
   readonly billId: string;
   readonly amountPaise: number;
   readonly paidDate: string;
+  /** Key of the bank account that the person chose. Needed when the party has more than one account. */
+  readonly bankKey?: string;
 }
 
 export interface PreviewLine {
   readonly paidDate: string;
   readonly accountName: string;
+  readonly ifsc: string;
+  /** Last 4 digits of the account number. The full number is never sent to the browser. */
+  readonly accountLast4: string;
   readonly refNos: string[];
   readonly amountPaise: number;
   readonly billCount: number;
@@ -103,7 +108,7 @@ export function evaluateSelection(args: {
     return { issues, lines: [], paidBills: [], totalPaise: 0, canCreate: false };
   }
 
-  type Row = { sel: Selection; bill: BillInfo; accountName: string };
+  type Row = { sel: Selection; bill: BillInfo; accountName: string; ifsc: string; accountNumber: string };
   const rows: Row[] = [];
 
   for (const sel of selections) {
@@ -134,7 +139,16 @@ export function evaluateSelection(args: {
       continue;
     }
 
-    const resolution = lookup.resolve(b.account);
+    const resolution = lookup.resolve(b.account, sel.bankKey);
+    if (resolution.status === "choose") {
+      add({
+        severity: "block",
+        code: "BANK_ACCOUNT_NOT_CHOSEN",
+        message: `${describe(b)}: "${b.account}" has ${resolution.options.length} bank accounts. Choose the account to pay.`,
+        billId: b.id,
+      });
+      continue;
+    }
     if (resolution.status === "unmapped") {
       add({
         severity: "block",
@@ -146,20 +160,17 @@ export function evaluateSelection(args: {
     }
     if (resolution.status === "invalid") {
       for (const problem of resolution.problems) {
-        const code =
-          problem === "INVALID_IFSC" ? "BENE_INVALID_IFSC" : problem === "INVALID_ACCOUNT_NUMBER" ? "BENE_INVALID_ACCOUNT" : "BENE_CONFLICT";
+        const code = problem === "INVALID_IFSC" ? "BENE_INVALID_IFSC" : "BENE_INVALID_ACCOUNT";
         const text =
           problem === "INVALID_IFSC"
             ? "has an IFSC code that is not valid"
-            : problem === "INVALID_ACCOUNT_NUMBER"
-              ? "has an account number that is not valid (9 to 18 digits)"
-              : "has two different bank accounts in Bene Master";
+            : "has an account number that is not valid (9 to 18 digits)";
         add({ severity: "block", code, message: `${describe(b)}: "${resolution.accountName}" ${text}. Correct Bene Master and refresh.`, billId: b.id });
       }
       continue;
     }
 
-    rows.push({ sel, bill: b, accountName: resolution.accountName });
+    rows.push({ sel, bill: b, accountName: resolution.accountName, ifsc: resolution.ifsc, accountNumber: resolution.accountNumber });
 
     if (sel.amountPaise < b.balancePaise) {
       add({
@@ -191,13 +202,21 @@ export function evaluateSelection(args: {
     a.bill.dueDate === b.bill.dueDate ? a.bill.fifoPosition - b.bill.fifoPosition : a.bill.dueDate < b.bill.dueDate ? -1 : 1,
   );
 
-  // Group by (paid date, bank account name). Same rule as the CSV.
+  // Group by (paid date, bank account name, chosen account). Same rule as the CSV.
   const groups = new Map<string, PreviewLine & { refNos: string[]; amountPaise: number; billCount: number }>();
   for (const r of rows) {
-    const key = `${r.sel.paidDate}\u0000${r.accountName}`;
+    const key = [r.sel.paidDate, r.accountName, r.ifsc, r.accountNumber].join("\u0000");
     let g = groups.get(key);
     if (!g) {
-      g = { paidDate: r.sel.paidDate, accountName: r.accountName, refNos: [], amountPaise: 0, billCount: 0 };
+      g = {
+        paidDate: r.sel.paidDate,
+        accountName: r.accountName,
+        ifsc: r.ifsc,
+        accountLast4: r.accountNumber.slice(-4),
+        refNos: [],
+        amountPaise: 0,
+        billCount: 0,
+      };
       groups.set(key, g);
     }
     if (r.bill.refNo !== "") g.refNos.push(r.bill.refNo);
@@ -250,6 +269,8 @@ export function evaluateSelection(args: {
         paidDate: r.sel.paidDate,
         refNo: r.bill.refNo,
         amountPaise: r.sel.amountPaise,
+        ifsc: r.ifsc,
+        accountNumber: r.accountNumber,
       }));
   const totalPaise = lines.reduce((sum, l) => sum + l.amountPaise, 0);
 

@@ -5,7 +5,6 @@ import { listBeneWithProblems } from "@/lib/queries";
 const TEXT: Record<string, string> = {
   INVALID_IFSC: "IFSC is not valid",
   INVALID_ACCOUNT_NUMBER: "Account number is not valid",
-  CONFLICTING_DETAILS: "Same name has two different bank accounts",
 };
 
 export default async function BenePage() {
