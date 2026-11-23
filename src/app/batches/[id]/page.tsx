@@ -25,7 +25,7 @@ export default async function BatchPage({
       <h1>{batch.fileName}</h1>
       <p className="muted">
         {batch.lineCount} bank lines, {batch.billCount} bills, total {formatInr(batch.totalPaise)}. SHA-256: <code>{batch.csvSha256.slice(0, 16)}…</code>
-        {batch.status === "voided" ? <> <span className="tag bad">Void: {batch.voidReason}</span></> : null}
+        {batch.status === "voided" ? <> <span className="tag bad">Undone: {batch.voidReason}</span></> : null}
       </p>
       <BatchActions batchId={batch.id} voided={batch.status === "voided"} autoDownload={download === "1"} />
       <table>

@@ -230,6 +230,18 @@ describe("batch", () => {
     expect(actions).toEqual(expect.arrayContaining(["import.run", "bene.refresh", "batch.create", "batch.void"]));
   });
 
+  it("undoes a batch without a reason and saves a default reason", async () => {
+    const id = await idOf("U000227/26-27");
+    const { batchId } = await createBatch(db, [{ billId: id, amountPaise: 4565200, paidDate: TODAY }], NOW);
+    await voidBatch(db, batchId, "   ");
+    const [row] = await db.select().from(batch).where(eq(batch.id, batchId));
+    expect(row?.status).toBe("voided");
+    expect(row?.voidReason).toBe("Undone by the user");
+    const [b] = await db.select().from(bill).where(eq(bill.id, id));
+    expect(b?.status).toBe("open");
+    expect((await db.select().from(payment))[0]?.status).toBe("voided");
+  });
+
   it("allows only one winner when two requests pay the same bill at the same time", async () => {
     const id = await idOf("U000227/26-27");
     const sel = [{ billId: id, amountPaise: 4565200, paidDate: TODAY }];

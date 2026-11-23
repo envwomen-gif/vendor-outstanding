@@ -141,13 +141,16 @@ export async function createBatch(db: Db, selections: readonly Selection[], now 
   });
 }
 
+/** Reason that is saved when the person gives none. */
+export const DEFAULT_UNDO_REASON = "Undone by the user";
+
 /**
- * Void a batch (for example the bank rejected the file). The bills can be paid
- * again. A bill that JS1 does not list any more becomes "closed".
+ * Undo a batch (for example the bank rejected the file, or it was only a test).
+ * The bills can be paid again. A bill that JS1 does not list any more becomes "closed".
+ * The reason is optional. The batch stays in the history as "voided".
  */
-export async function voidBatch(db: Db, batchId: string, reason: string): Promise<void> {
-  const trimmed = reason.trim();
-  if (trimmed.length < 3) throw new Error("Give a reason for the void.");
+export async function voidBatch(db: Db, batchId: string, reason = ""): Promise<void> {
+  const trimmed = reason.trim() === "" ? DEFAULT_UNDO_REASON : reason.trim();
 
   await db.transaction(async (tx) => {
     const [target] = await tx.select().from(batch).where(eq(batch.id, batchId)).for("update");
