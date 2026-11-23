@@ -13,6 +13,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <nav>
           <strong>Vendor Outstanding</strong>
           <a href="/">Payments</a>
+          <a href="/instant">Instant</a>
           <a href="/import">Import</a>
           <a href="/batches">Batches</a>
           <a href="/bene">Bene Master</a>

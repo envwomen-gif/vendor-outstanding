@@ -6,6 +6,7 @@ export type AuditAction =
   | "bene.refresh"
   | "batch.create"
   | "batch.void"
+  | "batch.instant"
   | "auth.login"
   | "auth.login_failed";
 

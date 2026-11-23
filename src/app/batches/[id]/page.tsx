@@ -24,7 +24,7 @@ export default async function BatchPage({
     <>
       <h1>{batch.fileName}</h1>
       <p className="muted">
-        {batch.lineCount} bank lines, {batch.billCount} bills, total {formatInr(batch.totalPaise)}. SHA-256: <code>{batch.csvSha256.slice(0, 16)}…</code>
+        {batch.kind === "instant" ? <><span className="tag">Instant</span> {payments.length} payments, </> : <>{batch.billCount} bills, </>}{batch.lineCount} bank lines, total {formatInr(batch.totalPaise)}. SHA-256: <code>{batch.csvSha256.slice(0, 16)}…</code>
         {batch.status === "voided" ? <> <span className="tag bad">Undone: {batch.voidReason}</span></> : null}
       </p>
       <BatchActions batchId={batch.id} voided={batch.status === "voided"} autoDownload={download === "1"} />
@@ -33,7 +33,7 @@ export default async function BatchPage({
         <tbody>
           {payments.map(({ p, account, docNo }) => (
             <tr key={p.id}>
-              <td>{formatDisplayDate(p.paidDate)}</td><td>{p.beneficiaryName}<div className="muted">{account}</div></td><td>{docNo}</td>
+              <td>{formatDisplayDate(p.paidDate)}</td><td>{p.beneficiaryName}<div className="muted">{account ?? p.softwareName}</div></td><td>{docNo ?? <span className="muted">Instant</span>}</td>
               <td>{p.refNo}</td><td>{p.ifsc}</td><td>{p.accountNumber}</td><td className="num">{formatInr(p.amountPaise)}</td>
             </tr>
           ))}

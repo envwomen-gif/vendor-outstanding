@@ -10,6 +10,7 @@ import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken, getSession
 import { clearLoginFailures, isLoginBlocked, recordLoginFailure } from "@/lib/auth/throttle";
 import { BatchBlockedError, createBatch, previewBatch, voidBatch } from "@/lib/batch/service";
 import type { Evaluation, Selection } from "@/lib/batch/evaluate";
+import { createInstantBatch, type InstantLine, InstantPaymentError } from "@/lib/batch/instant";
 import { refreshBene } from "@/lib/bene/service";
 import { ImportError, type ImportSummary, importOutstandings } from "@/lib/import/service";
 import { parseOutstandingUpload, UploadError } from "@/lib/import/upload";
@@ -23,6 +24,7 @@ function fail(error: unknown): { ok: false; message: string; details?: string[] 
     return { ok: false, message: error.message, details: error.rejected.slice(0, 20).map((r) => `${r.account} ${r.docNo}: ${r.reason}`) };
   }
   if (error instanceof UploadError || error instanceof SheetsError) return { ok: false, message: error.message };
+  if (error instanceof InstantPaymentError) return { ok: false, message: error.message, details: error.details };
   console.error(error);
   return { ok: false, message: "Something went wrong. Nothing was changed. Try again." };
 }
@@ -144,6 +146,31 @@ export async function voidBatchAction(batchId: string, reason: string): Promise<
     return { ok: true, data: null };
   } catch (error) {
     if (error instanceof Error && /voided|not found/i.test(error.message)) return { ok: false, message: error.message };
+    return fail(error);
+  }
+}
+
+// ---------- instant payments ----------
+
+/** Make the bank CSV for payments with no bill. The browser input is checked again on the server. */
+export async function createInstantBatchAction(input: unknown): Promise<ActionResult<{ batchId: string }>> {
+  if (!Array.isArray(input)) return { ok: false, message: "The payments are not valid. Reload the page." };
+  const lines: InstantLine[] = [];
+  for (const raw of input as unknown[]) {
+    if (typeof raw !== "object" || raw === null) return { ok: false, message: "The payments are not valid. Reload the page." };
+    const r = raw as Record<string, unknown>;
+    lines.push({
+      softwareName: typeof r.softwareName === "string" ? r.softwareName : "",
+      bankKey: typeof r.bankKey === "string" && r.bankKey !== "" ? r.bankKey : undefined,
+      amountPaise: typeof r.amountPaise === "number" ? r.amountPaise : Number.NaN,
+      paidDate: typeof r.paidDate === "string" ? r.paidDate : "",
+      reference: typeof r.reference === "string" ? r.reference : "",
+    });
+  }
+  try {
+    const created = await createInstantBatch(getDb(), lines);
+    return { ok: true, data: { batchId: created.batchId } };
+  } catch (error) {
     return fail(error);
   }
 }

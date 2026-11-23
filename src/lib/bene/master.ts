@@ -103,6 +103,11 @@ export class BeneLookup {
     }
   }
 
+  /** All software names that have at least one bank account, in the order of Bene Master. */
+  softwareNames(): string[] {
+    return [...this.optionsBySoftware.keys()];
+  }
+
   /** All bank accounts of a software name, in the order of Bene Master. */
   optionsOf(softwareName: string): readonly BankOption[] {
     return this.optionsBySoftware.get(cleanName(softwareName)) ?? [];
