@@ -6,6 +6,7 @@ import { createBatchAction, importFromUploadAction, previewBatchAction } from "@
 import { parseRupeesToPaise } from "@/lib/bank-csv";
 import type { Evaluation, Selection } from "@/lib/batch/evaluate";
 import { formatDisplayDate, formatInr } from "@/lib/format";
+import { groupByParty } from "@/lib/party-groups";
 import type { OpenBillRow } from "@/lib/queries";
 import { DateField } from "./DateField";
 
@@ -80,7 +81,8 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
   const [bulkDate, setBulkDate] = useState(today);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /** Parties that the person opened. All parties are closed at the start. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
   const [dueBy, setDueBy] = useState(today);
   const [dragging, setDragging] = useState(false);
@@ -121,15 +123,12 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
     });
   }, [bills, search, filter]);
 
-  const parties = useMemo(() => {
-    const map = new Map<string, OpenBillRow[]>();
-    for (const b of visible) map.set(b.account, [...(map.get(b.account) ?? []), b]);
-    return [...map.entries()].map(([account, rows]) => ({
-      account,
-      rows,
-      balancePaise: rows.reduce((sum, r) => sum + r.balancePaise, 0),
-    }));
-  }, [visible]);
+  const parties = useMemo(() => groupByParty(visible), [visible]);
+  const searching = search.trim() !== "";
+  const isOpen = (account: string) => searching || expanded.has(account);
+  function openParties(accounts: Iterable<string>) {
+    setExpanded((prev) => new Set([...prev, ...accounts]));
+  }
 
   // ----- totals of the ticked bills -----
   const ticked = bills.filter((b) => state[b.id]?.paid);
@@ -146,6 +145,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
   // ----- actions -----
   function setParty(rows: OpenBillRow[], paid: boolean) {
     invalidate();
+    if (paid) openParties(rows.map((r) => r.account));
     setState((prev) => {
       const next = { ...prev };
       for (const b of rows) next[b.id] = { ...(prev[b.id] ?? rowState(b)), paid };
@@ -187,6 +187,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
     const usable = matching.filter((b) => b.bank.status === "ok" || b.bank.status === "choose");
     const needChoice = usable.filter((b) => b.bank.status === "choose" && rowState(b).bankKey === undefined).length;
     invalidate();
+    openParties(usable.map((b) => b.account)); // the ticked bills must be in view, so the person can check them
     setState((prev) => {
       const next = { ...prev };
       for (const b of usable) next[b.id] = { ...(prev[b.id] ?? rowState(b)), paid: true };
@@ -415,6 +416,9 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
           <button type="button" onClick={() => tickWhere((b) => b.dueDate <= dueBy, `due by ${formatDisplayDate(dueBy)}`)}>Tick due by this date</button>
         </span>
         <button type="button" disabled={ticked.length === 0} onClick={untickAll}>Untick all</button>
+        <span className="muted">Parties:</span>
+        <button type="button" onClick={() => setExpanded(new Set(parties.map((p) => p.account)))}>Expand all</button>
+        <button type="button" onClick={() => setExpanded(new Set())} disabled={searching}>Collapse all</button>
         <span className="muted hint">or drop a JS1 file anywhere on this page</span>
       </div>
 
@@ -435,7 +439,7 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
       <div ref={listRef} onKeyDown={onListKey} className="parties">
         {parties.map((p) => {
           const tickedHere = p.rows.filter((r) => state[r.id]?.paid).length;
-          const isCollapsed = collapsed.has(p.account);
+          const open = isOpen(p.account);
           return (
             <section key={p.account} className="party">
               <header className="party-head">
@@ -448,14 +452,14 @@ export function PaymentsTable({ bills, today }: { bills: OpenBillRow[]; today: s
                 <button
                   type="button"
                   className="party-name"
-                  aria-expanded={!isCollapsed}
-                  onClick={() => setCollapsed((prev) => { const next = new Set(prev); if (next.has(p.account)) next.delete(p.account); else next.add(p.account); return next; })}
+                  aria-expanded={open}
+                  onClick={() => setExpanded((prev) => { const next = new Set(prev); if (next.has(p.account)) next.delete(p.account); else next.add(p.account); return next; })}
                 >
-                  <span className="chev" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span> {p.account}
+                  <span className="chev" aria-hidden="true">{open ? "▾" : "▸"}</span> {p.account}
                 </button>
-                <span className="muted">{p.rows.length} {p.rows.length === 1 ? "bill" : "bills"} · {formatInr(p.balancePaise)}</span>
+                <span className="muted">{p.rows.length} {p.rows.length === 1 ? "bill" : "bills"} · {formatInr(p.balancePaise)} · oldest due {formatDisplayDate(p.oldestDue)}{tickedHere > 0 ? ` · ${tickedHere} ticked` : ""}</span>
               </header>
-              {isCollapsed ? null : (
+              {!open ? null : (
                 <ul className="bills">
                   {p.rows.map((b) => {
                     const s = rowState(b);

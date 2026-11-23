@@ -1,4 +1,5 @@
 import { getDb } from "@/db";
+import { OverdueSummary } from "@/components/OverdueSummary";
 import { PaymentsTable } from "@/components/PaymentsTable";
 import { formatInr, todayInIndia } from "@/lib/format";
 import { listOpenBills } from "@/lib/queries";
@@ -7,7 +8,6 @@ export default async function PaymentsPage() {
   const bills = await listOpenBills(getDb());
   const total = bills.reduce((sum, b) => sum + b.balancePaise, 0);
   const overdue = bills.filter((b) => b.overdueDays > 0);
-  const overdueTotal = overdue.reduce((sum, b) => sum + b.balancePaise, 0);
   const parties = new Set(bills.map((b) => b.account)).size;
   return (
     <>
@@ -15,7 +15,19 @@ export default async function PaymentsPage() {
       <div className="summary">
         <div className="stat"><span className="muted">Open bills</span><strong>{bills.length}</strong><span className="muted">{parties} parties</span></div>
         <div className="stat"><span className="muted">Total to pay</span><strong>{formatInr(total)}</strong></div>
-        <div className="stat"><span className="muted">Overdue</span><strong className={overdue.length > 0 ? "warn-text" : undefined}>{formatInr(overdueTotal)}</strong><span className="muted">{overdue.length} bills</span></div>
+        <OverdueSummary
+          bills={overdue.map((b) => ({
+            id: b.id,
+            account: b.account,
+            docNo: b.docNo,
+            refNo: b.refNo,
+            billDate: b.billDate,
+            dueDate: b.dueDate,
+            overdueDays: b.overdueDays,
+            adjustedPaise: b.adjustedPaise,
+            balancePaise: b.balancePaise,
+          }))}
+        />
       </div>
       <p className="muted">
         Bills are in FIFO order: the oldest due date first. Tick the bills that you pay. You can change the amount, the paid date and the bank account of each bill.
