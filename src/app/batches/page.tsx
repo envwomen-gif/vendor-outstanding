@@ -1,4 +1,5 @@
 import { getDb } from "@/db";
+import { UndoBatchButton } from "@/components/UndoBatchButton";
 import { formatInr, formatDisplayDateTime } from "@/lib/format";
 import { listBatches } from "@/lib/queries";
 
@@ -16,7 +17,7 @@ export default async function BatchesPage() {
               <td><a href={`/batches/${b.id}`}>{b.fileName}</a></td>
               <td className="num">{b.lineCount}</td><td className="num">{b.billCount}</td><td className="num">{formatInr(b.totalPaise)}</td>
               <td>{b.status === "voided" ? <span className="tag bad">Undone</span> : "Active"}</td>
-              <td><a className="button" href={`/batches/${b.id}/csv`}>Download</a></td>
+              <td className="row"><a className="button" href={`/batches/${b.id}/csv`}>Download</a>{b.status !== "voided" ? <UndoBatchButton batchId={b.id} /> : null}</td>
             </tr>
           ))}
         </tbody>
