@@ -20,3 +20,53 @@ input.amount { width:110px; text-align:right; }
 .issue.block { background:var(--badbg); color:var(--bad); } .issue.warning { background:var(--warnbg); color:var(--warn); } .issue.suggestion { background:var(--hintbg); color:var(--hint); }
 .tag { font-size:12px; padding:1px 6px; border-radius:4px; border:1px solid var(--line); } .tag.bad { border-color:var(--bad); }
 tr.selected { background:var(--hintbg); }
+
+/* ---------- Payments screen ---------- */
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.small { font-size:12px; }
+.warn-text { color:var(--warn); }
+.summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:16px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; display:flex; flex-direction:column; gap:2px; }
+.stat strong { font-size:22px; font-variant-numeric:tabular-nums; }
+.toolbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:12px 0; position:sticky; top:0; z-index:5; background:var(--bg); padding:8px 0; }
+.search { flex:1 1 260px; min-width:200px; }
+.field { display:flex; flex-direction:column; gap:2px; font-size:12px; }
+.chips { display:flex; gap:6px; flex-wrap:wrap; }
+.chip { border-radius:999px; padding:4px 12px; font-size:13px; }
+.chip[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+.chip .count { margin-left:6px; opacity:.8; font-variant-numeric:tabular-nums; }
+.parties { display:flex; flex-direction:column; gap:12px; padding-bottom:96px; }
+.party { background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.party-head { display:flex; gap:12px; align-items:center; padding:8px 12px; background:color-mix(in srgb, var(--line) 35%, var(--card)); }
+.party-name { border:0; background:none; padding:0; font-weight:600; text-align:left; }
+.bills { list-style:none; margin:0; padding:0; }
+.bill { display:grid; grid-template-columns:28px minmax(150px,1.2fr) minmax(170px,1fr) 110px minmax(270px,1.4fr) minmax(200px,1.2fr); gap:12px; align-items:center; padding:8px 12px; border-top:1px solid var(--line); }
+.bill.selected { background:var(--hintbg); }
+.bill .num { text-align:right; font-variant-numeric:tabular-nums; }
+.bill .pay { display:flex; gap:8px; align-items:center; }
+.bill .pay input[type="date"] { width:150px; }
+.custom-date { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.badge { font-size:12px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); margin-left:8px; color:var(--muted); white-space:nowrap; }
+.badge.warn { color:var(--warn); border-color:var(--warn); }
+.badge.bad { color:var(--bad); border-color:var(--bad); margin-left:0; }
+.bank select { max-width:100%; }
+.needs-choice { border-color:var(--warn); }
+.bank-ok { font-size:13px; }
+.empty { padding:32px; text-align:center; color:var(--muted); }
+.bar { position:fixed; left:0; right:0; bottom:0; z-index:10; display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap; padding:10px 24px; background:var(--card); border-top:1px solid var(--line); box-shadow:0 -4px 16px rgba(0,0,0,.08); }
+.bar-actions { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
+.backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:20; }
+.panel { position:fixed; top:0; right:0; bottom:0; width:min(560px,100vw); z-index:21; background:var(--card); border-left:1px solid var(--line); display:flex; flex-direction:column; outline:none; }
+.panel-head, .panel-foot { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 16px; }
+.panel-head { border-bottom:1px solid var(--line); } .panel-head h2 { margin:0; }
+.panel-foot { border-top:1px solid var(--line); }
+.panel-body { padding:16px; overflow:auto; flex:1; }
+@media (max-width: 1100px) {
+  .bill { grid-template-columns:28px 1fr 1fr; }
+  .bill .pay, .bill .bank { grid-column:2 / -1; }
+  .bill .num { text-align:left; }
+}
+@media (max-width: 600px) {
+  main { padding:12px; } nav { padding:10px 12px; } .bar { padding:8px 12px; } .bill .pay { flex-wrap:wrap; }
+}
+@media (prefers-reduced-motion: no-preference) { button, .chip { transition: background-color .12s, border-color .12s; } }

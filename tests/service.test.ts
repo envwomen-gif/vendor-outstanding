@@ -266,3 +266,30 @@ describe("a party with more than one bank account", () => {
     expect((await listOpenBills(db, NOW)).find((b) => b.id === id)?.bank).toMatchObject({ status: "choose", defaultKey: first });
   });
 });
+
+describe("bills paid on different dates", () => {
+  it("makes one bank line for each date, even for the same party", async () => {
+    const a = await idOf("PU001214/26-27");
+    const b = await idOf("PU001215/26-27");
+    const c = await idOf("PU001412/26-27");
+    const created = await createBatch(
+      db,
+      [
+        { billId: a, amountPaise: 5585700, paidDate: "2026-11-19" },
+        { billId: b, amountPaise: 4639400, paidDate: "2026-11-19" },
+        { billId: c, amountPaise: 5313400, paidDate: "2026-11-21" },
+      ],
+      NOW,
+    );
+    expect(created.evaluation.lines.map((l) => [l.paidDate, l.billCount])).toEqual([
+      ["2026-11-19", 2],
+      ["2026-11-21", 1],
+    ]);
+    const payments = await db.select().from(payment);
+    expect(payments.map((p) => p.paidDate).sort()).toEqual(["2026-11-19", "2026-11-19", "2026-11-21"]);
+    const [row] = await db.select().from(batch).where(eq(batch.id, created.batchId));
+    expect(row?.lineCount).toBe(2);
+    expect(row?.csv).toContain("19/11/2026");
+    expect(row?.csv).toContain("21/11/2026");
+  });
+});
