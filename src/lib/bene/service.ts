@@ -1,6 +1,7 @@
 import type { Db } from "@/db";
 import { bene } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
+import { findBeneficiaryProblems } from "@/lib/bank-csv";
 import { BeneLookup, type BeneEntry, parseBeneRows } from "./master";
 
 export interface BeneRefreshSummary {
@@ -36,7 +37,8 @@ export async function loadBeneEntries(db: Db): Promise<BeneEntry[]> {
     ifsc: r.ifsc,
     accountNumber: r.accountNumber,
     email: r.email,
-    problems: r.problems as BeneEntry["problems"],
+    // Checked again here, so an old saved copy never shows a rule that no longer exists.
+    problems: findBeneficiaryProblems({ ifsc: r.ifsc, accountNumber: r.accountNumber }),
   }));
 }
 

@@ -106,6 +106,7 @@ function cleanSelections(input: readonly Selection[]): Selection[] {
     billId: String(s.billId),
     amountPaise: Number(s.amountPaise),
     paidDate: String(s.paidDate),
+    ...(s.bankKey ? { bankKey: String(s.bankKey) } : {}),
   }));
 }
 

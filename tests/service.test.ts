@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { Db } from "@/db";
-import { auditLog, bill, payment } from "@/db/schema";
+import { auditLog, batch, bill, payment } from "@/db/schema";
+import { listOpenBills } from "@/lib/queries";
 import { BatchBlockedError, createBatch, previewBatch, voidBatch } from "@/lib/batch/service";
 import { refreshBene } from "@/lib/bene/service";
 import { ImportError, importOutstandings } from "@/lib/import/service";
@@ -73,12 +74,17 @@ describe("Bene Master", () => {
     expect(lookup.resolve("AKASH YOGESH MODI")).toMatchObject({ status: "ok", accountName: "AKASH MODI" });
     expect(lookup.resolve("ALFA ENTERPRISES").status).toBe("ok");
   });
-  it("marks a bad IFSC and conflicting accounts", async () => {
+  it("marks a bad IFSC and asks for a choice when a party has two accounts", async () => {
     const { BeneLookup } = await import("@/lib/bene/master");
     const { loadBeneEntries } = await import("@/lib/bene/service");
     const lookup = new BeneLookup(await loadBeneEntries(db));
     expect(lookup.resolve("AIMSITE EVENTS PRIVATE LIMITED")).toMatchObject({ status: "invalid", problems: ["INVALID_IFSC"] });
-    expect(lookup.resolve("TWIN ONE")).toMatchObject({ status: "invalid", problems: ["CONFLICTING_DETAILS"] });
+    const twin = lookup.resolve("TWIN ONE");
+    expect(twin.status).toBe("choose");
+    if (twin.status !== "choose") return;
+    expect(twin.options).toHaveLength(2);
+    expect(lookup.resolve("TWIN ONE", twin.options[1]?.key)).toMatchObject({ status: "ok", accountNumber: "50100099999999" });
+    expect(lookup.resolve("TWIN ONE", "not-a-key").status).toBe("choose");
     expect(lookup.resolve("UNKNOWN PARTY").status).toBe("unmapped");
   });
   it("keeps the old copy when the new copy is empty", async () => {
@@ -157,7 +163,7 @@ describe("batch", () => {
     );
     expect(evaluation.canCreate).toBe(false);
     expect(evaluation.issues.filter((i) => i.severity === "block").map((i) => i.code).sort()).toEqual([
-      "BENE_CONFLICT",
+      "BANK_ACCOUNT_NOT_CHOSEN",
       "BENE_INVALID_IFSC",
       "BENE_UNMAPPED",
     ]);
@@ -217,5 +223,46 @@ describe("batch", () => {
     const results = await Promise.allSettled([createBatch(db, sel, NOW), createBatch(db, sel, NOW)]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(await db.select().from(payment)).toHaveLength(1);
+  });
+});
+
+describe("a party with more than one bank account", () => {
+  async function optionKeys(): Promise<string[]> {
+    const { loadBeneLookup } = await import("@/lib/bene/service");
+    return (await loadBeneLookup(db)).optionsOf("TWIN ONE").map((o) => o.key);
+  }
+
+  it("pays to the account that the person chose and writes it in the CSV", async () => {
+    const id = await idOf("PU000003/26-27");
+    const [, second] = await optionKeys();
+    const created = await createBatch(db, [{ billId: id, amountPaise: 300000, paidDate: TODAY, bankKey: second as string }], NOW);
+    const [paid] = await db.select().from(payment).where(eq(payment.billId, id));
+    expect(paid?.accountNumber).toBe("50100099999999");
+    const [row] = await db.select().from(batch).where(eq(batch.id, created.batchId));
+    expect(row?.csv).toContain("50100099999999");
+    expect(row?.csv).not.toContain("50100055074872");
+  });
+
+  it("blocks the batch when no account is chosen, and when the key is not known", async () => {
+    const id = await idOf("PU000003/26-27");
+    for (const bankKey of [undefined, "0000000000000000"]) {
+      const evaluation = await previewBatch(
+        db,
+        [{ billId: id, amountPaise: 300000, paidDate: TODAY, ...(bankKey ? { bankKey } : {}) }],
+        NOW,
+      );
+      expect(evaluation.canCreate).toBe(false);
+      expect(evaluation.issues.map((i) => i.code)).toContain("BANK_ACCOUNT_NOT_CHOSEN");
+    }
+  });
+
+  it("remembers the last choice as the default of the screen", async () => {
+    const id = await idOf("PU000003/26-27");
+    const [first] = await optionKeys();
+    expect((await listOpenBills(db, NOW)).find((b) => b.id === id)?.bank.defaultKey).toBeUndefined();
+    await createBatch(db, [{ billId: id, amountPaise: 300000, paidDate: TODAY, bankKey: first as string }], NOW);
+    const [batchRow] = await db.select().from(batch);
+    await voidBatch(db, batchRow?.id as string, "test");
+    expect((await listOpenBills(db, NOW)).find((b) => b.id === id)?.bank).toMatchObject({ status: "choose", defaultKey: first });
   });
 });

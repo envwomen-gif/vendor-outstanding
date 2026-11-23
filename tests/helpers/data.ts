@@ -10,7 +10,7 @@ export const BENE_ROWS: string[][] = [
   ["ALFA ENTERPRISES", "ALFA ENTERPRISES", "BKID0004904", "490420110000218", ""],
   ["ALFA ENTERPRISES", "ALFA ENTERPRISES", "BKID0004904", "490420110000218", ""], // identical duplicate
   ["TWIN ONE", "TWIN", "HDFC0000410", "50100055074872", ""],
-  ["TWIN TWO", "TWIN", "HDFC0000410", "50100099999999", ""], // same name, other account
+  ["TWIN ONE", "TWIN", "HDFC0000410", "50100099999999", ""], // same software name, other bank account
   ["", "", "", "", ""],
 ];
 

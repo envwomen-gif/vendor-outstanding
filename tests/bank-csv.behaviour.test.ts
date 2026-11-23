@@ -137,3 +137,27 @@ describe("helpers", () => {
     expect(bankCsvFileName(new Date("2026-11-19T10:00:00Z"))).toBe("BANK_FORMAT_2026-11-19.csv");
   });
 });
+
+describe("bills of one party with different bank accounts", () => {
+  const lookup = () => undefined;
+  const base = { beneficiaryName: "TWIN", paidDate: "2026-11-19", refNo: "R", amountPaise: 100000 };
+
+  it("go on two lines, and the chosen account is used without the lookup", () => {
+    const result = buildBankCsv(
+      [
+        { ...base, ifsc: "HDFC0000410", accountNumber: "50100055074872" },
+        { ...base, ifsc: "HDFC0000410", accountNumber: "50100099999999" },
+      ],
+      lookup,
+    );
+    expect(result.lines).toHaveLength(2);
+    expect(result.lines.map((l) => l.accountNumber)).toEqual(["50100055074872", "50100099999999"]);
+  });
+
+  it("stay on one line when the account is the same", () => {
+    const account = { ifsc: "HDFC0000410", accountNumber: "50100055074872" };
+    const result = buildBankCsv([{ ...base, ...account }, { ...base, ...account, refNo: "S" }], lookup);
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0]?.reference).toBe("BN R, S");
+  });
+});

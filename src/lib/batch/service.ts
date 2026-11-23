@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@/db";
-import { batch, bill, importRun, payment } from "@/db/schema";
+import { bankChoice, batch, bill, importRun, payment } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { bankCsvFileName, buildBankCsv } from "@/lib/bank-csv";
 import { loadBeneLookup } from "@/lib/bene/service";
@@ -109,7 +109,7 @@ export async function createBatch(db: Db, selections: readonly Selection[], now 
     for (const sel of selections) {
       const b = byId.get(sel.billId);
       if (!b) continue;
-      const resolution = lookup.resolve(b.account);
+      const resolution = lookup.resolve(b.account, sel.bankKey);
       if (resolution.status !== "ok") continue; // cannot happen: evaluation passed
       await tx.insert(payment).values({
         billId: b.id,
@@ -121,6 +121,11 @@ export async function createBatch(db: Db, selections: readonly Selection[], now 
         accountNumber: resolution.accountNumber,
         refNo: b.refNo,
       });
+      // Remember the account as the default for the next time. It is only a default.
+      await tx
+        .insert(bankChoice)
+        .values({ softwareName: b.account, optionKey: resolution.key })
+        .onConflictDoUpdate({ target: bankChoice.softwareName, set: { optionKey: resolution.key, updatedAt: new Date() } });
     }
     await tx.update(bill).set({ status: "paid", updatedAt: new Date() }).where(inArray(bill.id, ids));
 

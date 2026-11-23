@@ -129,3 +129,10 @@ export const loginAttempt = pgTable(
   },
   (t) => [index("login_attempt_key_at_idx").on(t.key, t.at)],
 );
+
+/** The bank account that the person chose last for a software name. It is only a default in the screen. */
+export const bankChoice = pgTable("bank_choice", {
+  softwareName: text("software_name").primaryKey(),
+  optionKey: text("option_key").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
