@@ -23,9 +23,9 @@ export function ImportPanel() {
         action={(formData) => start(async () => setResult(await importFromUploadAction(formData)))}
       >
         <h2>Upload the JS1 export</h2>
-        <p className="muted">Use the .xlsx or .csv file from JS1 (max 5 MB).</p>
+        <p className="muted">Use the .xls, .xlsx or .csv file from JS1 (max 5 MB). The app reads the dates as they are, so you do not need to change them.</p>
         <div className="row">
-          <input type="file" name="file" accept=".xlsx,.csv" required />
+          <input type="file" name="file" accept=".xls,.xlsx,.csv" required />
           <button className="primary" disabled={pending}>{pending ? "Working…" : "Upload and import"}</button>
         </div>
       </form>
