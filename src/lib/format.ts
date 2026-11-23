@@ -25,3 +25,21 @@ export function todayInIndia(now = new Date()): string {
     day: "2-digit",
   }).format(now);
 }
+
+/** A moment -> "23-Nov-2026, 12:20 pm" in India time. The month is always a name, never a number. */
+export function formatDisplayDateTime(value: Date | string | number): string {
+  const moment = new Date(value);
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(moment);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const month = get("month").replace(".", "").slice(0, 3);
+  const monthName = month.charAt(0).toUpperCase() + month.slice(1).toLowerCase();
+  return `${get("day")}-${monthName}-${get("year")}, ${get("hour")}:${get("minute")} ${get("dayPeriod").toLowerCase()}`;
+}

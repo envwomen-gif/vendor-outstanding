@@ -1,3 +1,4 @@
+import { formatDisplayDateTime } from "@/lib/format";
 import { getDb } from "@/db";
 import { listAudit } from "@/lib/queries";
 
@@ -11,7 +12,7 @@ export default async function AuditPage() {
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
-              <td>{r.at.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</td><td>{r.action}</td>
+              <td>{formatDisplayDateTime(r.at)}</td><td>{r.action}</td>
               <td className="muted">{r.entity} {r.entityId.slice(0, 8)}</td>
               <td><code>{JSON.stringify(r.detail)}</code></td>
             </tr>

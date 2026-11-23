@@ -1,9 +1,12 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@/db";
 import { bill, importRun } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { cleanName } from "@/lib/bene/clean";
 import { type Cell, type FifoBill, buildFifo, buildSortedData } from "@/lib/outstanding/parse";
+
+/** Rows in one statement. Each row has at most 8 values, so this stays far below the limit of Postgres. */
+const CHUNK = 500;
 
 export interface ImportInput {
   readonly source: "sheet" | "upload";
@@ -16,14 +19,16 @@ export interface ImportSummary {
   readonly importId: string;
   readonly rowsRead: number;
   readonly billsNew: number;
+  /** Bills that were in the list and have other values in the file (or come back after they were removed). */
   readonly billsUpdated: number;
+  readonly billsUnchanged: number;
   readonly billsClosed: number;
   readonly billsPaidWaiting: number;
   readonly rejected: { reason: string; account: string; docNo: string }[];
 }
 
 /**
- * Import the outstanding rows. Rules:
+ * Import the outstanding rows. The file is the full list of open bills, so the import replaces the open bills:
  *  - a bill is known by (account, doc no)
  *  - a new bill becomes "open"
  *  - a known "open" bill gets the new dates and amounts
@@ -82,37 +87,82 @@ export async function importOutstandings(db: Db, input: ImportInput): Promise<Im
     const existing = await tx.select().from(bill);
     const byKey = new Map(existing.map((b) => [`${b.account}\u0000${b.docNo}`, b]));
 
-    let billsNew = 0;
+    // One statement for each group of rows. A row by row import is slow when the database is far away.
+    const inserts: (typeof bill.$inferInsert)[] = [];
+    const refresh: { id: string; billDate: string; dueDate: string; refNo: string; fifoPosition: number; adjustedPaise: number; balancePaise: number }[] = [];
+    const lockedPositions: { id: string; fifoPosition: number }[] = [];
     let billsUpdated = 0;
-    let billsPaidWaiting = 0;
+    let billsUnchanged = 0;
+    const billsPaidWaiting = { count: 0 };
 
     for (const [fifoPosition, b] of incoming.entries()) {
-      const key = `${b.account}\u0000${b.docNo}`;
-      const known = byKey.get(key);
-      const values = {
-        billDate: b.date,
-        dueDate: b.dueDate,
-        refNo: b.refNo,
-        fifoPosition,
-        adjustedPaise: b.adjustedPaise,
-        balancePaise: b.balancePaise,
-        lastImportId: run.id,
-        updatedAt: new Date(),
-      };
+      const known = byKey.get(`${b.account}\u0000${b.docNo}`);
       if (!known) {
-        await tx.insert(bill).values({ account: b.account, docNo: b.docNo, status: "open", ...values });
-        billsNew += 1;
+        inserts.push({
+          account: b.account,
+          docNo: b.docNo,
+          status: "open",
+          billDate: b.date,
+          dueDate: b.dueDate,
+          refNo: b.refNo,
+          fifoPosition,
+          adjustedPaise: b.adjustedPaise,
+          balancePaise: b.balancePaise,
+          lastImportId: run.id,
+        });
       } else if (known.status === "paid") {
         // Locked. Keep the status and the amounts. Only note that JS1 still lists it.
-        await tx.update(bill).set({ lastImportId: run.id, fifoPosition }).where(eq(bill.id, known.id));
-        billsPaidWaiting += 1;
+        lockedPositions.push({ id: known.id, fifoPosition });
+        billsPaidWaiting.count += 1;
       } else {
-        await tx
-          .update(bill)
-          .set({ ...values, status: "open" })
-          .where(eq(bill.id, known.id));
-        billsUpdated += 1;
+        const same =
+          known.status === "open" &&
+          known.billDate === b.date &&
+          known.dueDate === b.dueDate &&
+          known.refNo === b.refNo &&
+          known.adjustedPaise === b.adjustedPaise &&
+          known.balancePaise === b.balancePaise;
+        refresh.push({
+          id: known.id,
+          billDate: b.date,
+          dueDate: b.dueDate,
+          refNo: b.refNo,
+          fifoPosition,
+          adjustedPaise: b.adjustedPaise,
+          balancePaise: b.balancePaise,
+        });
+        if (same) billsUnchanged += 1;
+        else billsUpdated += 1;
       }
+    }
+    const billsNew = inserts.length;
+
+    for (let i = 0; i < inserts.length; i += CHUNK) await tx.insert(bill).values(inserts.slice(i, i + CHUNK));
+
+    for (let i = 0; i < refresh.length; i += CHUNK) {
+      const rows = refresh.slice(i, i + CHUNK);
+      const values = sql.join(
+        rows.map(
+          (r) => sql`(${r.id}, ${r.billDate}, ${r.dueDate}, ${r.refNo}, ${r.fifoPosition}, ${r.adjustedPaise}, ${r.balancePaise})`,
+        ),
+        sql`, `,
+      );
+      await tx.execute(sql`
+        UPDATE bill SET
+          bill_date = v.bill_date::date, due_date = v.due_date::date, ref_no = v.ref_no,
+          fifo_position = v.fifo_position::integer, adjusted_paise = v.adjusted_paise::bigint,
+          balance_paise = v.balance_paise::bigint, status = 'open', last_import_id = ${run.id}::uuid, updated_at = now()
+        FROM (VALUES ${values}) AS v(id, bill_date, due_date, ref_no, fifo_position, adjusted_paise, balance_paise)
+        WHERE bill.id = v.id::uuid`);
+    }
+
+    for (let i = 0; i < lockedPositions.length; i += CHUNK) {
+      const rows = lockedPositions.slice(i, i + CHUNK);
+      const values = sql.join(rows.map((r) => sql`(${r.id}, ${r.fifoPosition})`), sql`, `);
+      await tx.execute(sql`
+        UPDATE bill SET fifo_position = v.fifo_position::integer, last_import_id = ${run.id}::uuid
+        FROM (VALUES ${values}) AS v(id, fifo_position)
+        WHERE bill.id = v.id::uuid`);
     }
 
     const missingOpenIds = existing
@@ -130,8 +180,9 @@ export async function importOutstandings(db: Db, input: ImportInput): Promise<Im
       rowsRead: input.rows.length,
       billsNew,
       billsUpdated,
+      billsUnchanged,
       billsClosed: missingOpenIds.length,
-      billsPaidWaiting,
+      billsPaidWaiting: billsPaidWaiting.count,
       rejected,
     };
     await tx
